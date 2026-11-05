@@ -65,6 +65,6 @@
 
 | 이름 | 역할 | GitHub |
 | --- | --- | --- |
-| 김경수 | - | [@gyeongsu666](https://github.com/gyeongsu666) |
-| 이현강 | - | - |
-| 전수빈 | - | - |
+| 김경수 | 프론트 | [@gyeongsu666](https://github.com/gyeongsu666) |
+| 이현강 | AI | - |
+| 전수빈 | 백엔드 | https://github.com/subin0318 |
