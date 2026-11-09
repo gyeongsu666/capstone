@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><title>ReFind 전체 화면 흐름도</title>
+<link rel="stylesheet" href="refind.css?v=20261109">
+<style>
+  body{width:1680px;height:1060px;display:block;overflow:hidden;left:50%;top:50%;transform-origin:center center}
+  svg{display:block}
+</style></head>
+<body>
+<svg id="flow" width="1680" height="1060" viewBox="0 0 1680 1060" font-family="Pretendard,'Malgun Gothic',sans-serif"></svg>
+<script>
+function fitScreen() { const b = document.body, s = Math.min(innerWidth / b.offsetWidth, innerHeight / b.offsetHeight); b.style.transform = `translate(-50%,-50%) scale(${s})`; }
+addEventListener('DOMContentLoaded', fitScreen); addEventListener('resize', fitScreen);
+const W = 1680;
+const COL = { screen:'#89AD99', sys:'#6E7F75', dec:'#E9D46B', db:'#7FA3B8', pill:'#89AD99' };
+const N = {};   // id -> {x,y,w,h,type}
+let out = '';
+
+const lanes = [
+  ['시작', 60, 120, 'rgba(137,173,153,.04)'],
+  ['S1 사전준비', 120, 380, 'rgba(127,163,184,.06)', '최초 1회 · 환경 설정'],
+  ['S2 과거 동선 추적', 380, 670, 'rgba(137,173,153,.07)', '사건 등록 → 후보 확인 반복'],
+  ['S3 현재 위치 수색', 670, 1000, 'rgba(233,212,107,.05)', '범위 추정 · 실시간 감시'],
+];
+
+function node(id, type, x, y, label, o = {}) {
+  const w = o.w || (type === 'dec' ? 132 : type === 'db' ? 112 : type === 'pill' ? 108 : 138);
+  const h = o.h || (type === 'dec' ? 74 : type === 'pill' ? 36 : 56);
+  N[id] = { x, y, w, h, type };
+  const c = COL[type], lines = label.split('\n');
+  let s = '';
+  if (type === 'screen') s = `<rect x="${x-w/2}" y="${y-h/2}" width="${w}" height="${h}" rx="6" fill="#1F2E27" stroke="${c}" stroke-width="1.8"/>`;
+  if (type === 'sys') s = `<rect x="${x-w/2}" y="${y-h/2}" width="${w}" height="${h}" rx="18" fill="#232D29" stroke="${c}" stroke-width="1.3" stroke-dasharray="0"/>`;
+  if (type === 'pill') s = `<rect x="${x-w/2}" y="${y-h/2}" width="${w}" height="${h}" rx="${h/2}" fill="${c}"/>`;
+  if (type === 'dec') s = `<path d="M${x} ${y-h/2}L${x+w/2} ${y}L${x} ${y+h/2}L${x-w/2} ${y}Z" fill="#2A2918" stroke="${c}" stroke-width="1.6"/>`;
+  if (type === 'db') s = `<path d="M${x-w/2} ${y-h/2+8}v${h-16}a${w/2} 8 0 0 0 ${w} 0v-${h-16}" fill="#1E2A30" stroke="${c}" stroke-width="1.5"/><ellipse cx="${x}" cy="${y-h/2+8}" rx="${w/2}" ry="8" fill="#26343B" stroke="${c}" stroke-width="1.5"/>`;
+  const tag = o.scr ? `<rect x="${x-w/2}" y="${y-h/2-10}" width="${o.scr.length*6.6+12}" height="17" rx="3" fill="${c}"/><text x="${x-w/2+6}" y="${y-h/2+2.5}" font-size="10.5" font-weight="800" fill="#14201A">${o.scr}</text>` : '';
+  const fs = type === 'dec' ? 11.5 : 12.5, col = type === 'pill' ? '#14201A' : type === 'sys' ? '#C6D1CA' : '#DEE7E0';
+  const ty = y - (lines.length - 1) * (fs + 3) / 2 + fs * .36 + (type === 'db' ? 4 : 0);
+  out += `<g>${s}${tag}${lines.map((l, i) => `<text x="${x}" y="${ty + i * (fs + 3)}" text-anchor="middle" font-size="${fs}" font-weight="${type === 'sys' ? 500 : 650}" fill="${col}">${l}</text>`).join('')}</g>`;
+}
+const R = id => [N[id].x + N[id].w/2, N[id].y], L = id => [N[id].x - N[id].w/2, N[id].y];
+const T = id => [N[id].x, N[id].y - N[id].h/2], B = id => [N[id].x, N[id].y + N[id].h/2];
+let edges = '', labels = '';
+function edge(pts, label, o = {}) {
+  const d = 'M' + pts.map(p => p.join(' ')).join('L');
+  const c = o.loop ? '#E9D46B' : o.c || '#8FA197';
+  edges += `<path d="${d}" fill="none" stroke="${c}" stroke-width="${o.loop ? 1.6 : 1.5}" ${o.loop ? 'stroke-dasharray="6 4"' : ''} marker-end="url(#${o.loop ? 'ay' : 'ag'})"/>`;
+  if (label) {
+    const [a, b] = o.at != null ? [pts[o.at], pts[o.at + 1]] : [pts[0], pts[1]];
+    const mx = (a[0] + b[0]) / 2 + (o.dx || 0), my = (a[1] + b[1]) / 2 + (o.dy || 0);
+    labels += `<rect x="${mx - label.length * 6.2 / 2 - 6}" y="${my - 9}" width="${label.length * 6.2 + 12}" height="18" rx="4" fill="#131C18" stroke="${o.loop ? '#5C5530' : '#2E3D35'}"/><text x="${mx}" y="${my + 4}" text-anchor="middle" font-size="10.5" font-weight="700" fill="${o.loop ? '#E9D46B' : '#C6D1CA'}">${label}</text>`;
+  }
+}
+const H = (id1, id2, lab, o) => edge([R(id1), L(id2)], lab, o);
+
+/* ---------- 시작 ---------- */
+node('s0', 'pill', 230, 90, '앱 실행');
+node('s1', 'screen', 410, 90, '사건 목록', { scr: 'SCR-01', w: 160, h: 44 });
+node('s2', 'dec', 610, 90, '환경 설정이\n끝났는가?', { h: 56, w: 150 });
+
+/* ---------- S1 ---------- */
+const y1 = 225;
+node('a1', 'screen', 230, y1, '지도·카메라 배치\n위치·방향·시야각', { scr: 'SCR-02' });
+node('a2', 'sys', 400, y1, '도보 경로 계산\n카카오 도보 경로 API');
+node('a3', 'dec', 560, y1, '우회 심함·\nAPI 실패 구간?');
+node('a4', 'screen', 560, 330, '도보 경로 직접 보정', { scr: 'SCR-02', h: 44 });
+node('a5', 'screen', 720, y1, '위험지역 등록\n지도에 범위 그리기', { scr: 'SCR-02' });
+node('a6', 'screen', 885, y1, '영상 등록\n카메라·녹화 시작 시각', { scr: 'SCR-03' });
+node('a7', 'dec', 1045, y1, '입력 검증\n통과?');
+node('a8', 'sys', 1045, 330, '오류·경고 표시', { h: 40 });
+node('a9', 'sys', 1215, y1, '영상 분석\n검출·추적 → 트랙렛 → Re-ID', { w: 170 });
+node('a12', 'db', 1215, 150 + 0, '메타 DB · 벡터 DB\n트랙렛 ID로 연결', { w: 150, h: 50 });
+node('a10', 'dec', 1385, y1, '분석 성공?', { w: 116 });
+node('a11', 'sys', 1385, 330, '실패 사유 표시 → 재시도', { w: 160, h: 40 });
+node('a13', 'pill', 1545, y1, '검색 가능', { w: 100 });
+
+/* ---------- S2 ---------- */
+const y2 = 505;
+node('b1', 'screen', 230, y2, '사건 등록\n보호자 신고 시각·장소', { scr: 'SCR-04', w: 170 });
+node('b2', 'dec', 410, y2, '실종자 사진이\n있는가?', { w: 120 });
+node('b3', 'sys', 580, y2, '시공간 제약 필터\n→ 유사도 검색\n→ 경로 일관성 검사', { w: 150, h: 70 });
+node('b4', 'screen', 755, y2, '후보 선택\n유사도 기준 설정', { scr: 'SCR-05' });
+node('b5', 'dec', 920, y2, '후보 중 찾는\n사람이 있는가?', { w: 140 });
+node('b6', 'sys', 1090, 450, '확정 장면 기록', { h: 40 });
+node('b7', 'sys', 1090, 560, '부재 정보 기록', { h: 40 });
+node('b8', 'db', 1090, 625 - 12, '확인 기록 (메타 DB)', { w: 150, h: 34 });
+node('b10', 'dec', 1265, y2, '동선이 충분히\n확정되었는가?', { w: 140 });
+node('b9', 'sys', 1265, 610, '새 기준점으로\n앞뒤 구간 재검색', { w: 140, h: 46 });
+node('b11', 'screen', 1450, y2, '타임라인·지도 경로\n장면 클릭 → 영상 재생', { scr: 'SCR-06', w: 170 });
+
+/* ---------- S3 ---------- */
+const y3 = 820;
+node('c1', 'screen', 230, y3, '현재 위치 수색\n범위·우선 구역 표시', { scr: 'SCR-07' });
+node('c2', 'sys', 400, y3, '이동 가능 범위 3단계\n+ 수색 우선 구역 계산', { w: 150 });
+node('c3', 'dec', 570, y3, '위험지역과\n겹치는가?', { w: 120 });
+node('c4', 'sys', 570, 930, '위험 경고 표시', { h: 40 });
+node('c5', 'sys', 735, y3, '실시간 감시 등록\n→ 실시간 분석·매칭', { w: 150 });
+node('c6', 'dec', 905, y3, '매칭 점수?', { w: 116 });
+node('c7', 'sys', 1065, 755, '즉시 출현 알림', { h: 40 });
+node('c8', 'sys', 1065, 890, '확인 대기 목록', { h: 40 });
+node('c9', 'dec', 1215, y3, '담당자 확인\n맞음?', { w: 120 });
+node('c10', 'sys', 1370, 755, '확정 장면 추가\n→ 범위·구역 자동 갱신', { w: 150, h: 46 });
+node('c11', 'sys', 1370, 900, '오탐 기록\n감시 계속', { w: 130, h: 44 });
+node('c12', 'dec', 1530, y3, '실종자\n발견?', { w: 104 });
+node('c13', 'screen', 1530, 940, '사건 종결\n발견 / 미발견 기록', { scr: 'SCR-08', w: 150 });
+
+/* ---------- edges ---------- */
+H('s0','s1'); H('s1','s2');
+edge([B('s2'), [610, 150], [230, 150], T('a1')], '아니오', { at: 1, dx: 120 });
+edge([R('s2'), [1640, 90], [1640, 400], [230, 400], T('b1')], '예 (S2로)', { at: 0, dx: 250 });
+
+H('a1','a2'); H('a2','a3');
+edge([B('a3'), T('a4')], '예', { dx: 14 });
+edge([L('a4'), [400, 330], B('a2')], '보정 후 재확인', { at: 0, dx: -10, loop: true });
+H('a3','a5', '아니오'); H('a5','a6'); H('a6','a7');
+edge([B('a7'), T('a8')], '아니오', { dx: 22 });
+edge([L('a8'), [885, 330], B('a6')], '재입력', { at: 0, loop: true });
+H('a7','a9', '예');
+edge([T('a9'), B('a12')], '저장');
+H('a9','a10');
+edge([B('a10'), T('a11')], '아니오', { dx: 22 });
+edge([L('a11'), [1215, 330], B('a9')], '재시도', { at: 0, loop: true });
+H('a10','a13', '예');
+edge([B('a13'), [1545, 400], [1640, 400]], '', { c: '#8FA197' });
+
+H('b1','b2');
+edge([R('b2'), L('b3')], '있음: 사진 · 없음: 영상 직접', { dy: -50 });
+H('b3','b4'); H('b4','b5');
+edge([[920, y2 - 37], [920, 450], L('b6')], '예 → 확정', { at: 1, dx: -4, dy: -14 });
+edge([[920, y2 + 37], [920, 560], L('b7')], '없음', { at: 1, dy: -14 });
+edge([R('b6'), [1180, 450], [1180, y2], L('b10')]);
+edge([R('b7'), [1180, 560], [1180, y2]]);
+edge([B('b7'), T('b8')], '', { c: '#7FA3B8' });
+edge([B('b10'), T('b9')], '아니오', { dx: 26 });
+edge([L('b9'), [1195, 610], [1195, 640], [580, 640], B('b3')], '반복 (후보 확인 ↔ 재검색)', { at: 2, loop: true });
+H('b10','b11', '예');
+edge([B('b11'), [1450, 690], [230, 690], T('c1')], 'S3로', { at: 1, dx: 560 });
+
+H('c1','c2'); H('c2','c3');
+edge([B('c3'), T('c4')], '예', { dx: 14 });
+edge([R('c4'), [735, 930], B('c5')], '', {});
+H('c3','c5', '아니오'); H('c5','c6');
+edge([[905, y3 - 37], [905, 755], L('c7')], '높음', { at: 1, dy: -14 });
+edge([[905, y3 + 37], [905, 890], L('c8')], '중간', { at: 1, dy: -14 });
+edge([R('c7'), [1215, 755], T('c9')]);
+edge([R('c8'), [1215, 890], B('c9')]);
+edge([R('c9'), [1290, y3], [1290, 755], L('c10')], '맞음', { at: 1, dx: 0 });
+edge([[1290, y3], [1290, 900], L('c11')], '아님', { at: 0, dy: 30, dx: 0 });
+edge([B('c11'), [1370, 985], [735, 985], [735, y3 + 28]], '감시 계속', { at: 1, loop: true });
+edge([R('c10'), [1530, 755], T('c12')]);
+edge([B('c12'), T('c13')], '발견 / 수색 중단', { dx: 0 });
+edge([L('c12'), [1460, y3], [1460, 718], [230, 718], T('c1')], '아니오 → 수색 계속 (범위 갱신)', { at: 2, loop: true, dx: 300 });
+edge([L('c13'), [1300, 940], [1300, 1035], [140, 1035], [140, 90], L('s0')], '종결 후 사건 목록', { at: 2, dx: -380 });
+
+/* ---------- render ---------- */
+const lanesSvg = lanes.map(([n, y0, y1, bg, sub]) => `<rect x="20" y="${y0}" width="${W - 40}" height="${y1 - y0}" fill="${bg}" stroke="#22302A"/>
+  <text x="34" y="${y0 + 24}" font-size="13" font-weight="800" fill="#DEE7E0">${n}</text>${sub ? `<text x="34" y="${y0 + 42}" font-size="11" fill="#6E7F75">${sub}</text>` : ''}`).join('');
+const legend = `<g transform="translate(860 22)">
+  <rect width="800" height="28" rx="6" fill="#1A2520" stroke="#2B3A32"/>
+  <rect x="14" y="7" width="26" height="14" rx="3" fill="#1F2E27" stroke="#89AD99" stroke-width="1.6"/><text x="46" y="18" font-size="11" fill="#A2B1A7">화면 (SCR-ID)</text>
+  <path d="M140 7L154 14 140 21 126 14Z" fill="#2A2918" stroke="#E9D46B"/><text x="160" y="18" font-size="11" fill="#A2B1A7">사용자 판단</text>
+  <rect x="236" y="7" width="26" height="14" rx="7" fill="#232D29" stroke="#6E7F75"/><text x="268" y="18" font-size="11" fill="#A2B1A7">시스템 자동 처리</text>
+  <ellipse cx="374" cy="10" rx="11" ry="3" fill="#26343B" stroke="#7FA3B8"/><path d="M363 10v8a11 3 0 0 0 22 0v-8" fill="none" stroke="#7FA3B8"/><text x="392" y="18" font-size="11" fill="#A2B1A7">저장소</text>
+  <line x1="446" y1="14" x2="476" y2="14" stroke="#8FA197" stroke-width="1.5" marker-end="url(#ag)"/><text x="482" y="18" font-size="11" fill="#A2B1A7">진행</text>
+  <line x1="520" y1="14" x2="550" y2="14" stroke="#E9D46B" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#ay)"/><text x="556" y="18" font-size="11" fill="#A2B1A7">반복·되돌아감</text>
+  <text x="652" y="18" font-size="11" fill="#6E7F75">로그인·역할 구분 없음</text></g>`;
+document.getElementById('flow').innerHTML = `
+  <defs><marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#8FA197"/></marker>
+  <marker id="ay" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#E9D46B"/></marker></defs>
+  <rect width="${W}" height="1060" fill="#131C18"/>
+  <text x="24" y="42" font-size="22" font-weight="800" fill="#DEE7E0">ReFind 전체 화면 흐름도</text>
+  <text x="300" y="42" font-size="12" fill="#A2B1A7">사용자 시나리오 S1 → S2 → S3 · 화면 SCR-01 ~ SCR-08</text>
+  ${legend}${lanesSvg}${edges}${out}${labels}`;
+</script></body></html>

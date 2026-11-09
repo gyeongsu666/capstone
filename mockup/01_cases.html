@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><title>사건 목록 — ReFind</title>
+<link rel="stylesheet" href="refind.css?v=20261109"><script src="shell.js?v=20261109"></script><script src="interact.js?v=20261109"></script>
+<style>
+  table.t tr.crow{cursor:pointer}
+  table.t tr.crow:hover td{background:rgba(137,173,153,.06)}
+  table.t tr.closed td{color:var(--sub)}
+  .alr{display:flex;gap:12px;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--card2);cursor:pointer;align-items:center}
+  .alr:hover{border-color:var(--line2)}
+  .alr.hi{border-color:#7A3434;background:linear-gradient(180deg,rgba(239,68,68,.1),rgba(239,68,68,.03))}
+  .setup{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);text-decoration:none;color:var(--txt)}
+  .setup:last-child{border-bottom:0}
+  .setup:hover b{color:var(--acc)}
+  .tab{cursor:pointer}
+  input.inp{font:inherit;outline:none}
+  input.inp:focus{border-color:var(--acc)}
+</style></head>
+<body><aside class="side"></aside>
+<main><header class="top"></header>
+<section class="content">
+  <div class="ptitle"><div><h1>사건 목록</h1><p>수색할 사건을 고르거나 새 사건을 등록합니다. 다른 화면에 있는 동안 들어온 출현 알림도 여기서 확인합니다.</p></div>
+    <div class="act"><a class="btn pri lg" href="04_case_new.html?step=1" id="newcase">+ 새 사건 등록</a></div></div>
+  <div class="row grow">
+    <div class="card grow col" style="padding:14px 0 0;gap:0;min-height:0">
+      <div class="row" style="padding:0 16px 12px;align-items:center;gap:12px">
+        <div class="tabs" id="filter"></div><span class="grow"></span>
+        <input class="inp" id="q" placeholder="사건 번호·장소 검색" style="width:240px">
+      </div>
+      <div class="scroll grow"><table class="t" id="tbl"></table></div>
+      <div class="cap" style="padding:12px 16px;border-top:1px solid var(--line)" id="foot"></div>
+    </div>
+    <div class="panel" style="width:380px">
+      <div class="card pad col" style="gap:10px;flex:1.4;min-height:0">
+        <div class="ch" style="margin:0"><h3>최근 출현 알림</h3><span class="r" id="acount"></span></div>
+        <div class="col" style="gap:8px" id="alerts"></div>
+      </div>
+      <div class="card pad">
+        <div class="ch" style="margin:0 0 4px"><h3>환경 설정 상태</h3><span class="r">검색 전에 확인</span></div>
+        <div id="setup"></div>
+      </div>
+    </div>
+  </div>
+</section></main>
+<script>
+let S = Store.get(), filter = 'all', q = '';
+shell('cases', { title: '사건 목록', meta: '담당자 김수현', unread: S.unread });
+setUnread(S.unread);
+
+// RF-1108-04는 시연 사건(저장 상태를 반영), 나머지는 목록을 채우는 예시 사건
+function stageOf(s) {
+  if (s.closed) return ['종결', null];
+  if (s.alerts.length || s.pending.length) return ['실시간 감시', '05_workspace.html?mode=search'];
+  if (!s.confirmed.length) return ['후보 확인 중', '05_workspace.html?mode=cand'];
+  return ['동선 분석', '05_workspace.html?mode=route'];
+}
+function rows() {
+  const R = S.report, [stage, href] = stageOf(S);
+  const demo = { no: S.case.no, type: S.case.type, place: R.acc === '모름' ? '장소 모름' : CAM[R.cam][3] + (R.acc === '근처' ? ' 근처' : ''), t: `11.08 ${R.t}`,
+    stage, href, open: !S.closed, demo: true, found: S.confirmed.length, closedTxt: S.closed ? (S.closed.result === 'found' ? '발견' : '미발견') : '' };
+  return [demo,
+    { no: 'RF-1108-03', type: '치매환자', place: '학생회관 동측', t: '11.08 14:18', stage: '동선 분석', open: true, found: 3 },
+    { no: 'RF-1108-02', type: '장애인', place: '공학관 보행로 근처', t: '11.08 13:52', stage: '후보 확인 중', open: true, found: 1 },
+    { no: 'RF-1108-01', type: '기타', place: '정문 버스정류장', t: '11.08 13:21', stage: '후보 확인 중', open: true, found: 0 },
+    { no: 'RF-1107-02', type: '치매환자', place: '생활관 입구', t: '11.07 17:42', stage: '종결', open: false, found: 6, closedTxt: '발견' },
+    { no: 'RF-1107-01', type: '아동', place: '체육관 남측', t: '11.07 16:08', stage: '종결', open: false, found: 4, closedTxt: '발견' }];
+}
+
+function render() {
+  const all = rows(), list = all.filter(r => (filter === 'all' || (filter === 'open' ? r.open : !r.open)) && (!q || (r.no + r.place + r.type).includes(q)));
+  const n = (f) => all.filter(r => f === 'all' || (f === 'open' ? r.open : !r.open)).length;
+  document.getElementById('filter').innerHTML = [['all', '전체'], ['open', '진행 중'], ['closed', '종결']].map(([k, l]) => `<span class="tab ${filter === k ? 'on' : ''}" data-f="${k}">${l} ${n(k)}</span>`).join('');
+  document.querySelectorAll('#filter .tab').forEach(t => t.onclick = () => { filter = t.dataset.f; render(); });
+  const stCls = { '실시간 감시': 'hi', '동선 분석': 'ok', '후보 확인 중': 'mid', '종결': 'gray' };
+  document.getElementById('tbl').innerHTML = `<tr><th>사건 번호</th><th>실종자 유형</th><th>보호자 신고 (마지막 목격)</th><th>확정 장면</th><th>진행 단계</th><th>상태</th><th></th></tr>` +
+    (list.length ? list.map((r, i) => `<tr class="crow ${r.open ? '' : 'closed'}" data-i="${all.indexOf(r)}">
+      <td><b>${r.no}</b>${r.demo ? ' <span class="bdg ok nd" style="height:18px;font-size:10.5px">시연</span>' : ''}</td><td>${r.type}</td>
+      <td><div>${r.place}</div><div class="cap num">${r.t}</div></td><td class="num">${r.found}개</td>
+      <td><span class="bdg ${stCls[r.stage]}">${r.stage}</span></td>
+      <td>${r.open ? '<span class="bdg ok">진행 중</span>' : `<span class="bdg gray nd">종결 · ${r.closedTxt}</span>`}</td>
+      <td style="text-align:right;color:var(--mute)">${ICON.chev.replace('<svg', '<svg class="ico"')}</td></tr>`).join('')
+      : `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--sub)">조건에 맞는 사건이 없습니다.</td></tr>`);
+  document.querySelectorAll('#tbl tr.crow').forEach(tr => tr.onclick = () => {
+    const r = all[+tr.dataset.i];
+    if (!r.demo) { toast(`${r.no}는 목록 예시입니다. 시연은 ${S.case.no} 사건으로 진행합니다.`, 'info'); return; }
+    location.href = r.href || '05_workspace.html?mode=route';
+  });
+  document.getElementById('foot').textContent = `전체 ${all.length}건 중 ${list.length}건 · 행을 누르면 그 사건의 현재 단계 화면으로 이동합니다`;
+
+  /* 알림 */
+  const items = [...S.alerts.map(a => ({ ...a, hi: true })), ...S.pending.map(p => ({ ...p, hi: false }))].sort((a, b) => b.t.localeCompare(a.t));
+  document.getElementById('acount').textContent = items.length ? `미확인 ${items.length}건` : '';
+  document.getElementById('alerts').innerHTML = items.length ? items.map(a => `<div class="alr ${a.hi ? 'hi' : ''}">${thumb(52, 74, a.hi ? TARGET : ['#A9554C', '#3E4F66', { child: true }])}
+      <div class="grow"><div class="row" style="gap:6px;align-items:baseline"><b class="num" style="font-size:20px;${a.hi ? 'color:#FCA5A5' : ''}">${a.score}%</b><span class="cap">유사도</span><span class="bdg ${a.hi ? 'hi' : 'mid'} nd" style="margin-left:auto">${a.hi ? '즉시 알림' : '확인 대기'}</span></div>
+      <b>CAM-${a.cam} · ${CAM[a.cam][3]}</b><div class="cap num">${S.case.no} · ${a.t}</div></div></div>`).join('')
+    : `<div class="cap" style="padding:20px 0;text-align:center">${S.closed ? '종결된 사건이라 감시를 멈췄습니다.' : '미확인 알림이 없습니다.'}</div>`;
+  document.querySelectorAll('.alr').forEach(e => e.onclick = () => location.href = '05_workspace.html?mode=search');
+
+  /* 환경 설정 상태 */
+  const st = [['02_camera.html?tab=cam', ICON.map, '카메라 배치', '완료 · 24/24대', 'ok'], ['02_camera.html?tab=route', ICON.route, '도보 경로', '수동 보정 필요 2구간', 'mid'],
+    ['02_camera.html?tab=danger', ICON.warn, '위험지역', '3곳 등록', 'ok'], ['03_video.html', ICON.video, '영상 분석', '대기 2 · 분석 중 2 · 실패 1', 'mid']];
+  document.getElementById('setup').innerHTML = st.map(([h, ic, n, v, c]) => `<a class="setup" href="${h}"><span style="color:var(--sub);display:flex">${ic.replace('<svg', '<svg class="ico"')}</span><b class="grow" style="font-weight:500">${n}</b><span class="bdg ${c}">${v}</span>${ICON.chev.replace('<svg', '<svg class="ico" style="color:var(--mute)"')}</a>`).join('');
+}
+document.getElementById('q').oninput = (e) => { q = e.target.value.trim(); render(); };
+document.getElementById('newcase').onclick = (e) => { e.preventDefault(); Store.reset(true); sessionStorage.removeItem('refind-draft'); location.href = '04_case_new.html?step=1'; };
+render();
+</script></body></html>

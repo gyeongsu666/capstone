@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><title>B-2 지도·카메라 배치 — ReFind</title>
+<link rel="stylesheet" href="refind.css?v=20261109"><script src="shell.js?v=20261109"></script><script src="interact.js?v=20261109"></script>
+<style>
+  .dial{width:92px;height:92px;flex:none;cursor:pointer}
+  .camlist{display:flex;flex-direction:column;gap:2px;font-size:12px;overflow-y:auto;min-height:0}
+  .camlist div{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;color:var(--sub);cursor:pointer}
+  .camlist div:hover{background:var(--card2)}
+  .camlist div.on{background:var(--accbg);color:var(--txt)}
+  .camlist em{font-style:normal;margin-left:auto;color:var(--mute)}
+  .sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .sum div{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  .sum b{display:block;font-size:17px}
+  .sum span{font-size:11px;color:var(--sub)}
+  .dz{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer}
+  .dz.on{border-color:#C64848;background:rgba(239,68,68,.06)}
+  .dz .sw{width:22px;height:22px;border-radius:4px;background:repeating-linear-gradient(45deg,rgba(239,68,68,.6) 0 3px,rgba(239,68,68,.08) 3px 7px);border:1px solid #EF4444}
+  .tab{cursor:pointer}
+  .mtool span{cursor:pointer}
+  table.t tr{cursor:pointer}
+  table.t tr:hover td{background:rgba(137,173,153,.05)}
+  input.inp{font:inherit;width:100%;outline:none}
+  input.inp:focus{border-color:var(--acc)}
+  #map svg{cursor:default}
+  #map.drawing svg{cursor:crosshair}
+  #map.adding svg{cursor:copy}
+</style></head>
+<body><aside class="side"></aside>
+<main><header class="top"></header>
+<section class="content">
+  <div class="ptitle">
+    <div><h1>지도·카메라 배치</h1><p>카메라 위치·방향을 지정하고, 카메라 사이 도보 경로와 위험지역을 등록합니다. 최초 1회 설정 후 필요 시 수정합니다.</p></div>
+    <div class="act"><div class="tabs" id="tabs"><span class="tab" data-t="cam">카메라</span><span class="tab" data-t="route">도보 경로</span><span class="tab" data-t="danger">위험지역</span></div></div>
+  </div>
+  <div class="row grow">
+    <div class="mapbox grow" id="map"></div>
+    <div class="panel" id="panel"></div>
+  </div>
+</section></main>
+
+<script>
+shell('camera', { title: '환경 설정', meta: '캠퍼스 카메라 24대 · 위험지역 3곳' });
+let tab = Q.get('tab') || 'cam', tool = 'sel', selCam = '07', selPair = 0, selZone = 'hill', drawPts = [];
+const camState = {}; Object.keys(CAM).forEach(id => camState[id] = { dir: CAM[id][2], fov: 60 });
+const PAIRS = [
+  { a: '12', b: '07', st: 'mid', fix: true }, { a: '15', b: '16', st: 'hi' }, { a: '23', b: '07', st: 'hi' }, { a: '04', b: '12', st: 'mid' },
+  { a: '09', b: '19', st: 'ok' }, { a: '07', b: '09', st: 'ok' }, { a: '03', b: '11', st: 'ok' }, { a: '15', b: '19', st: 'ok' },
+];
+PAIRS.forEach(p => { const r = camPath(p.a, p.b); p.m = Math.round(r.len * PX2M); p.detour = p.st === 'mid' ? (1.5 + Math.random() * .2).toFixed(2) : p.st === 'ok' ? (1.04 + Math.random() * .1).toFixed(2) : '—'; });
+const ST = { ok: '정상', mid: '우회 심함', hi: '수동 보정 필요', fixed: '보정됨' };
+const zones = Object.entries(DANGER).map(([k, d]) => ({ k, name: d.name, pts: d.pts, type: { hill: '산·숲', construct: '공사장', road: '차도' }[k], target: '실종자' }));
+let total = 276, done = 276;
+
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => { tab = t.dataset.t; tool = tab === 'danger' ? 'sel' : 'sel'; drawPts = []; history.replaceState(null, '', '?tab=' + tab); render(); });
+const zoom = `<div class="zoom"><span>+</span><span>−</span></div><div class="mapsrc">지도: 카카오맵 SDK 연동 영역 (시안용 캠퍼스 도식)</div>`;
+const svgPoint = (svg, e) => { const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); };
+const nearestCam = (p) => { let best = null, bd = 1e9; Object.entries(CAM).forEach(([id, c]) => { const d = Math.hypot(c[0] - p.x, c[1] - p.y); if (d < bd) { bd = d; best = id; } }); return bd < 40 ? best : null; };
+function syncCam(id) { CAM[id][2] = camState[id].dir; }
+
+function render() {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.t === tab));
+  const map = document.getElementById('map'), panel = document.getElementById('panel');
+  map.className = 'mapbox grow' + (tool === 'poly' ? ' drawing' : tool === 'cam' ? ' adding' : '');
+  panel.style.width = tab === 'route' ? '440px' : '380px';
+  const tools = `<div class="mtool" style="left:12px;top:12px">
+    <span data-tool="sel" class="${tool === 'sel' ? 'on' : ''}">${ICON.cursor}선택</span><span data-tool="cam" class="${tool === 'cam' ? 'on' : ''}">${ICON.cam}카메라 추가</span>
+    <span data-tool="poly" class="${tool === 'poly' ? 'on' : ''}">${ICON.poly}위험지역 그리기</span><span data-tool="del">${ICON.trash}삭제</span></div>`;
+
+  if (tab === 'cam') {
+    const st = camState[selCam];
+    map.innerHTML = mapSVG('', { danger: true, dangerLabel: false, camLabels: true, camOpt: { [selCam]: { sel: true, label: true, fov: st.fov } } }) + tools + zoom +
+      `<div class="legend" style="left:12px;bottom:28px"><div><span class="sw" style="background:rgba(137,173,153,.35);border:1px solid #89AD99"></span>카메라 시야각</div><div><span class="sw" style="background:repeating-linear-gradient(45deg,rgba(239,68,68,.6) 0 2px,transparent 2px 5px)"></span>위험지역</div></div>`;
+    const deg = ((st.dir + 90) % 360 + 360) % 360, compass = ['북', '북동', '동', '남동', '남', '남서', '서', '북서'][Math.round(deg / 45) % 8];
+    const rad = (d) => d * Math.PI / 180, a1 = rad(st.dir - st.fov / 2), a2 = rad(st.dir + st.fov / 2);
+    panel.innerHTML = `
+    <div class="card pad">
+      <div class="ch"><h3>CAM-${selCam}</h3><span class="bdg ok">배치 완료</span><span class="r">선택됨</span></div>
+      <div class="field"><label>카메라 이름</label><input class="inp" id="f-name" value="${CAM[selCam][3]}"></div>
+      <div class="row" style="gap:10px">
+        <div class="field grow"><label>위도</label><div class="inp num">${(37.5825 + (800 - CAM[selCam][1]) * .0000072).toFixed(5)}</div></div>
+        <div class="field grow"><label>경도</label><div class="inp num">${(127.0224 + CAM[selCam][0] * .0000091).toFixed(5)}</div></div>
+      </div>
+      <div class="row" style="gap:16px;align-items:center;margin-bottom:12px">
+        <svg class="dial" id="dial" viewBox="0 0 100 100"><circle cx="50" cy="50" r="44" fill="#16201B" stroke="#3A4B41"/>
+          <path d="M50 50 L${50 + 41 * Math.cos(a1)} ${50 + 41 * Math.sin(a1)} A41 41 0 ${st.fov > 180 ? 1 : 0} 1 ${50 + 41 * Math.cos(a2)} ${50 + 41 * Math.sin(a2)}Z" fill="rgba(137,173,153,.35)" stroke="#89AD99"/>
+          <circle cx="50" cy="50" r="4" fill="#DEE7E0"/><line x1="50" y1="50" x2="${50 + 42 * Math.cos(rad(st.dir))}" y2="${50 + 42 * Math.sin(rad(st.dir))}" stroke="#DEE7E0" stroke-width="2"/>
+          <text x="50" y="96" text-anchor="middle" font-size="9" fill="#6E7F75">S</text><text x="50" y="9" text-anchor="middle" font-size="9" fill="#DEE7E0">N</text></svg>
+        <div class="grow">
+          <div class="field"><label>방향 <span class="cap">(다이얼을 클릭)</span></label><div class="inp num">${Math.round(deg)}° (${compass})</div></div>
+          <div class="field" style="margin:0"><label>시야각 <b class="num" style="color:var(--txt);float:right" id="fovv">${st.fov}°</b></label>
+            <div class="slider" id="fov"><div class="tr"><i style="width:${(st.fov - 20) / 160 * 100}%"></i></div><span class="kn" style="left:${(st.fov - 20) / 160 * 100}%"></span></div></div>
+        </div>
+      </div>
+      <dl class="kv"><dt>연결된 영상</dt><dd>${['10', '16', '15'].includes(selCam) ? '1개 · 분석 중' : '3개 · 분석 완료 3'}</dd><dt>관측 길 자동 연결</dt><dd>${CAMNODE[selCam]} 노드 주변 보행로</dd><dt>도보 경로</dt><dd>23개 구간 계산 완료</dd></dl>
+      <div class="row" style="gap:8px;margin-top:14px"><button class="btn dan sm" id="del">${ICON.trash}삭제</button><span class="grow"></span><button class="btn sm" id="cancel">되돌리기</button><button class="btn pri sm" id="save">저장</button></div>
+    </div>
+    <div class="card pad grow col" style="gap:6px;min-height:0">
+      <div class="ch" style="margin:0"><h3>카메라 목록</h3><span class="r">${Object.keys(CAM).length}대</span></div>
+      <div class="camlist">${Object.keys(CAM).sort().map(id => `<div class="${id === selCam ? 'on' : ''}" data-c="${id}"><span class="dot" style="margin:0"></span>CAM-${id} · ${CAM[id][3]}<em>${['10', '16', '15'].includes(id) ? '영상 1' : '영상 3'}</em></div>`).join('')}</div>
+    </div>`;
+    panel.querySelectorAll('[data-c]').forEach(d => d.onclick = () => { selCam = d.dataset.c; render(); });
+    const dial = document.getElementById('dial');
+    const setDir = (e) => { const p = svgPoint(dial, e); camState[selCam].dir = Math.round(Math.atan2(p.y - 50, p.x - 50) * 180 / Math.PI); syncCam(selCam); render(); };
+    dial.onpointerdown = (e) => { setDir(e); };
+    bindSlider(document.getElementById('fov'), (v) => { camState[selCam].fov = Math.round(20 + v * 160); setSlider(document.getElementById('fov'), v);
+      document.getElementById('fovv').textContent = camState[selCam].fov + '°'; const m = document.querySelector('#map svg'); m.outerHTML; }, () => render());
+    document.getElementById('save').onclick = () => { CAM[selCam][3] = document.getElementById('f-name').value || CAM[selCam][3]; toast(`CAM-${selCam} 설정을 저장했습니다. 관련 도보 경로 23개 구간을 다시 계산합니다.`); render(); };
+    document.getElementById('cancel').onclick = () => { camState[selCam] = { dir: -90, fov: 60 }; syncCam(selCam); render(); toast('변경 내용을 되돌렸습니다.', 'info'); };
+    document.getElementById('del').onclick = () => { const id = selCam; delete CAM[id]; selCam = Object.keys(CAM)[0]; toast(`CAM-${id}를 삭제했습니다. 연결된 도보 경로 구간도 함께 제거됩니다.`, 'warn'); render(); };
+  }
+
+  if (tab === 'route') {
+    const P = PAIRS[selPair], r = camPath(P.a, P.b);
+    const fixLine = P.fix ? `<polyline points="${CAM[P.a][0]},${CAM[P.a][1]} 520,330 ${CAM[P.b][0]},${CAM[P.b][1]}" fill="none" stroke="#F59E0B" stroke-width="4" stroke-dasharray="9 7" stroke-linecap="round"/><circle cx="520" cy="330" r="7" fill="#131C18" stroke="#F59E0B" stroke-width="2.5"/>` : '';
+    const others = PAIRS.map((q, i) => i === selPair ? '' : `<polyline points="${ptsStr(camPath(q.a, q.b).pts)}" fill="none" stroke="${q.st === 'hi' ? '#EF4444' : q.st === 'mid' ? '#F59E0B' : '#89AD99'}" stroke-opacity=".5" stroke-width="3" ${q.st === 'hi' ? 'stroke-dasharray="6 5"' : ''} stroke-linejoin="round"/>`).join('');
+    map.innerHTML = mapSVG(others + `<polyline points="${ptsStr(r.pts)}" fill="none" stroke="#DEE7E0" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>` + fixLine,
+      { danger: true, dangerLabel: false, camLabels: false, camOpt: { [P.a]: { sel: true, label: true }, [P.b]: { sel: true, label: true } } }) + tools + zoom +
+      `<div class="legend" style="left:12px;bottom:28px">
+        <div><span class="sw" style="background:#89AD99;height:3px"></span>정상 계산 구간</div>
+        <div><span class="sw" style="background:#DEE7E0;height:4px"></span>선택 구간 (API 최단 경로)</div>
+        <div><span class="sw" style="border-top:3px dashed #F59E0B;height:0"></span>관리자 보정 경로</div>
+        <div><span class="sw" style="border-top:3px dashed #EF4444;height:0"></span>수동 보정 필요</div></div>`;
+    const cnt = (s) => PAIRS.filter(p => p.st === s).length;
+    panel.innerHTML = `
+    <div class="card pad">
+      <div class="ch"><h3>도보 경로 계산</h3><span class="r num" id="lastcalc">마지막 계산 11.06 10:24</span></div>
+      <div class="sum"><div><b class="num" id="donecnt">${done}<span style="font-size:12px;color:var(--sub)">/${total}</span></b><span>계산 완료</span></div>
+        <div><b class="num" style="color:var(--mid)">${cnt('mid')}</b><span>우회 심함</span></div><div><b class="num" style="color:#F87171">${cnt('hi')}</b><span>수동 보정 필요</span></div><div><b class="num">0</b><span>API 실패</span></div></div>
+      <div class="bar" style="margin:12px 0 6px"><i id="calcbar" style="width:${done / total * 100}%"></i></div>
+      <div class="row" style="align-items:center;gap:8px"><span class="cap">카카오 도보 경로 API · 최단 경로 옵션 · 카메라 쌍 n(n−1)/2</span><span class="grow"></span><button class="btn sm" id="recalc">${ICON.refresh}전체 다시 계산</button></div>
+    </div>
+    <div class="card grow scroll" style="padding:12px 0 0">
+      <div class="ch" style="padding:0 14px"><h3>카메라 쌍 목록</h3><span class="r">행을 눌러 지도에서 확인</span></div>
+      <table class="t"><tr><th>출발</th><th>도착</th><th>거리</th><th>예상 시간</th><th>우회율</th><th>상태</th></tr>
+      ${PAIRS.map((p, i) => `<tr class="${i === selPair ? 'sel' : ''}" data-p="${i}"><td>CAM-${p.a}</td><td>CAM-${p.b}</td><td class="num">${p.st === 'hi' ? '—' : p.m + ' m'}</td><td class="num">${p.st === 'hi' ? '—' : fmtDur(p.m / 1.25)}</td><td class="num">${p.detour}</td><td><span class="bdg ${p.st === 'fixed' ? 'ok' : p.st}">${ST[p.st]}</span></td></tr>`).join('')}</table>
+    </div>
+    <div class="card pad" style="border-color:${P.st === 'ok' || P.st === 'fixed' ? 'var(--line)' : '#5C4A20'}">
+      <div class="ch"><h3 style="font-size:14px">CAM-${P.a} → CAM-${P.b} ${P.st === 'ok' ? '구간' : '보정'}</h3><span class="bdg ${P.st === 'fixed' ? 'ok' : P.st}">${ST[P.st]}</span></div>
+      <p class="cap" style="margin-bottom:10px">${P.st === 'ok' ? 'API 계산 결과가 정상입니다. 필요하면 값을 직접 수정할 수 있습니다.' : P.st === 'hi' ? '지도 데이터에 길이 없어 API가 경로를 찾지 못했습니다. 현장을 확인해 거리·시간을 직접 입력하세요.' : '지도에 없는 지름길(예: 분수대 광장 가로지름)이 있을 수 있습니다. 값을 직접 입력해 보정하세요.'}</p>
+      <div class="row" style="gap:10px"><div class="field grow" style="margin:0"><label>보정 거리 (m)</label><input class="inp num" id="fm" value="${P.st === 'hi' ? '' : P.fix ? Math.round(P.m * .65) : P.m}" placeholder="예: 150"></div><div class="field grow" style="margin:0"><label>보정 시간 (초)</label><input class="inp num" id="fs" value="${P.st === 'hi' ? '' : Math.round((P.fix ? P.m * .65 : P.m) / 1.25)}" placeholder="예: 120"></div></div>
+      <div class="row" style="gap:8px;margin-top:12px"><button class="btn sm" id="revert">API 값으로 되돌리기</button><span class="grow"></span><button class="btn pri sm" id="fixsave">${ICON.check}보정 저장</button></div>
+    </div>`;
+    panel.querySelectorAll('[data-p]').forEach(tr => tr.onclick = () => { selPair = +tr.dataset.p; render(); });
+    document.getElementById('fixsave').onclick = () => { const m = +document.getElementById('fm').value; if (!m) { toast('보정 거리를 입력하세요.', 'err'); return; }
+      P.m = m; P.st = 'fixed'; P.detour = '1.00'; toast(`CAM-${P.a} → CAM-${P.b} 구간을 ${m} m로 보정했습니다.`); render(); };
+    document.getElementById('revert').onclick = () => { P.m = Math.round(r.len * PX2M); toast('API 계산 값으로 되돌렸습니다.', 'info'); render(); };
+    document.getElementById('recalc').onclick = (e) => { e.target.disabled = true; done = 0; let t = setInterval(() => { done = Math.min(total, done + 9);
+      document.getElementById('donecnt').innerHTML = `${done}<span style="font-size:12px;color:var(--sub)">/${total}</span>`; document.getElementById('calcbar').style.width = done / total * 100 + '%';
+      if (done >= total) { clearInterval(t); document.getElementById('lastcalc').textContent = '마지막 계산 방금 전'; toast('276개 구간 계산을 마쳤습니다. 보정한 구간은 보정 값을 유지합니다.'); render(); } }, 40); };
+  }
+
+  if (tab === 'danger') {
+    const Z = zones.find(z => z.k === selZone);
+    const polys = zones.map(z => `<polygon points="${z.pts}" fill="url(#hatch)" stroke="#EF4444" stroke-width="${z.k === selZone ? 3 : 1.5}" data-z="${z.k}" style="cursor:pointer"/>`).join('');
+    const verts = Z && tool !== 'poly' ? Z.pts.split(' ').map(p => `<circle cx="${p.split(',')[0]}" cy="${p.split(',')[1]}" r="6" fill="#131C18" stroke="#EF4444" stroke-width="2.5"/>`).join('') : '';
+    const drawing = drawPts.length ? `<polyline points="${drawPts.map(p => p.join(',')).join(' ')}" fill="rgba(239,68,68,.1)" stroke="#F87171" stroke-width="2.5" stroke-dasharray="6 4"/>${drawPts.map((p, i) => `<circle cx="${p[0]}" cy="${p[1]}" r="${i ? 5 : 8}" fill="${i ? '#131C18' : '#EF4444'}" stroke="#EF4444" stroke-width="2.5"/>`).join('')}` : '';
+    map.innerHTML = mapSVG(polys + verts + drawing, { camLabels: false, dimCams: true }) + tools + zoom +
+      (tool === 'poly' ? `<div class="toast" style="left:50%;transform:translateX(-50%);top:58px">${ICON.poly.replace('<svg', '<svg style="color:#F87171"')}꼭짓점을 클릭해 범위를 그리고, 첫 점(큰 빨간 점)을 다시 누르면 완료됩니다. (${drawPts.length}개)</div>` : '');
+    panel.innerHTML = `
+    <div class="card pad">
+      <div class="ch"><h3>위험지역 목록</h3><span class="r">${zones.length}곳</span><button class="btn sm" id="add">${ICON.plus}추가</button></div>
+      ${zones.map(d => `<div class="dz ${d.k === selZone ? 'on' : ''}" data-z="${d.k}"><span class="sw"></span><div class="grow"><b>${d.name}</b><div class="cap">${d.type} · 적용 대상 ${d.target}</div></div>${ICON.chev.replace('<svg', '<svg class="ico" style="color:var(--mute)"')}</div>`).join('')}
+    </div>
+    ${Z ? `<div class="card pad">
+      <div class="ch"><h3>위험지역 편집</h3><span class="bdg hi">편집 중</span></div>
+      <div class="field"><label>이름</label><input class="inp" id="zname" value="${Z.name}"></div>
+      <div class="field"><label>유형</label><div class="seg" id="ztype">${['산·숲', '공사장', '차도', '수변'].map(t => `<span class="${Z.type === t ? 'on' : ''}">${t}</span>`).join('')}</div></div>
+      <div class="field"><label>적용 대상</label><div class="seg" id="ztarget">${['실종자', '범죄자'].map(t => `<span class="${Z.target === t ? 'on' : ''}">${t === '실종자' ? '실종자 (위험지역)' : '범죄자 (사람 많은 곳)'}</span>`).join('')}</div></div>
+      <dl class="kv"><dt>꼭짓점</dt><dd>${Z.pts.split(' ').length}개</dd></dl>
+      <div class="row" style="gap:8px;margin-top:14px"><button class="btn dan sm" id="zdel">${ICON.trash}삭제</button><span class="grow"></span><button class="btn pri sm" id="zsave">저장</button></div>
+    </div>` : ''}`;
+    panel.querySelectorAll('.dz').forEach(d => d.onclick = () => { selZone = d.dataset.z; tool = 'sel'; drawPts = []; render(); });
+    map.querySelectorAll('polygon[data-z]').forEach(p => p.onclick = (e) => { if (tool === 'poly') return; e.stopPropagation(); selZone = p.dataset.z; render(); });
+    document.getElementById('add').onclick = () => { tool = 'poly'; drawPts = []; render(); };
+    if (Z) {
+      document.querySelectorAll('#ztype span').forEach(s => s.onclick = () => { Z.type = s.textContent; render(); });
+      document.querySelectorAll('#ztarget span').forEach((s, i) => s.onclick = () => { Z.target = i ? '범죄자' : '실종자'; render(); });
+      document.getElementById('zsave').onclick = () => { Z.name = document.getElementById('zname').value; toast(`위험지역 ‘${Z.name}’을 저장했습니다.`); render(); };
+      document.getElementById('zdel').onclick = () => { zones.splice(zones.indexOf(Z), 1); selZone = zones[0]?.k; toast(`위험지역 ‘${Z.name}’을 삭제했습니다.`, 'warn'); render(); };
+    }
+  }
+
+  /* 지도 도구 */
+  map.querySelectorAll('[data-tool]').forEach(s => s.onclick = () => {
+    const t = s.dataset.tool;
+    if (t === 'del') { if (tab === 'cam') document.getElementById('del').click(); else if (tab === 'danger' && document.getElementById('zdel')) document.getElementById('zdel').click(); else toast('삭제할 항목을 먼저 선택하세요.', 'info'); return; }
+    if (t === 'poly' && tab !== 'danger') { tab = 'danger'; }
+    tool = t; drawPts = []; render();
+  });
+  const svg = map.querySelector('svg');
+  svg.onclick = (e) => {
+    const p = svgPoint(svg, e);
+    if (tool === 'cam') {
+      const id = String(Math.max(...Object.keys(CAM).map(Number)) + 1).padStart(2, '0');
+      CAM[id] = [Math.round(p.x), Math.round(p.y), -90, '새 카메라']; camState[id] = { dir: -90, fov: 60 }; CAMNODE[id] = 'F';
+      selCam = id; tool = 'sel'; tab = 'cam'; toast(`CAM-${id}를 추가했습니다. 이름과 방향을 입력하세요.`); render(); return;
+    }
+    if (tool === 'poly') {
+      if (drawPts.length >= 3 && Math.hypot(drawPts[0][0] - p.x, drawPts[0][1] - p.y) < 18) {
+        const k = 'z' + Date.now(); zones.push({ k, name: '새 위험지역', pts: drawPts.map(q => q.join(',')).join(' '), type: '산·숲', target: '실종자' });
+        selZone = k; tool = 'sel'; drawPts = []; toast('새 위험지역을 그렸습니다. 이름과 유형을 입력하세요.'); render(); return;
+      }
+      drawPts.push([Math.round(p.x), Math.round(p.y)]); render(); return;
+    }
+    if (tab === 'cam') { const c = nearestCam(p); if (c) { selCam = c; render(); } }
+  };
+}
+render();
+</script></body></html>

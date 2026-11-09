@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><title>사건 수색 — ReFind</title>
+<link rel="stylesheet" href="refind.css?v=20261109"><script src="shell.js?v=20261109"></script><script src="interact.js?v=20261109"></script>
+<style>
+  #ws{position:relative;flex:1;min-height:0;overflow:hidden}
+  #map{position:absolute;inset:0;border-radius:0;border:0}
+  .fp{position:absolute;z-index:5;background:rgba(20,29,25,.94);backdrop-filter:blur(6px);border:1px solid var(--line2);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.38)}
+  #left{left:14px;top:66px;bottom:124px;width:350px;display:flex;flex-direction:column;overflow:hidden;transition:width .2s}
+  #left.closed{width:44px}
+  #left .lh{display:flex;align-items:center;gap:8px;padding:12px 12px 10px;border-bottom:1px solid var(--line)}
+  #left .lb{flex:1;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+  #left .lb::-webkit-scrollbar{width:6px}#left .lb::-webkit-scrollbar-thumb{background:var(--line2);border-radius:3px}
+  #left.closed .lb,#left.closed .lt{display:none}
+  .ib{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--sub);flex:none}
+  .ib:hover{background:var(--card3);color:var(--txt)}
+  #modebar{top:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:5px;border-radius:11px}
+  .mode{display:flex;align-items:center;gap:7px;padding:8px 14px;border-radius:8px;color:var(--sub);font-weight:600;cursor:pointer;white-space:nowrap}
+  .mode:hover{color:var(--txt)}
+  .mode.on{background:var(--accd);color:#F2F7F3}
+  .mode .n{font-size:11px;background:rgba(0,0,0,.25);border-radius:9px;padding:0 6px;line-height:17px}
+  .mode .n.hi{background:var(--hi);color:#fff}
+  #strip{left:14px;right:14px;bottom:14px;height:96px;display:flex;align-items:center;gap:0;padding:0 14px;overflow-x:auto}
+  .si{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:9px;cursor:pointer;flex:none;border:1px solid transparent}
+  .si:hover{background:var(--card2)}
+  .si.on{border-color:var(--acc);background:#22332B}
+  .si .n{width:22px;height:22px;border-radius:50%;background:var(--acc);color:#14201A;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center}
+  .si .n.t{background:transparent;border:2px dashed var(--acc);color:var(--acc)}
+  .sl{flex:0 0 26px;height:2px;background:var(--acc)}
+  .sl.d{background:none;border-top:2px dashed var(--acc)}
+  .sl.g{background:none;border-top:2px dotted var(--mute)}
+  #right{position:absolute;right:14px;top:66px;width:340px;z-index:7;display:flex;flex-direction:column;gap:10px}
+  .alert{border:1px solid #C64848;background:rgba(48,20,20,.95);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;box-shadow:0 0 0 3px rgba(239,68,68,.15),0 12px 30px rgba(0,0,0,.4);animation:pop .35s ease-out}
+  @keyframes pop{from{transform:translateY(-8px);opacity:0}}
+  #card{position:absolute;z-index:8;width:440px;display:none}
+  #card.show{display:block}
+  #card .arrow{position:absolute;top:110px;width:12px;height:12px;background:rgba(20,29,25,.97);border-left:1px solid var(--line2);border-bottom:1px solid var(--line2)}
+  .vc{background:rgba(20,29,25,.97);border:1px solid var(--line2);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.5);overflow:hidden}
+  .vc .vh{display:flex;align-items:center;gap:8px;padding:10px 12px}
+  .vc .vb{padding:10px 12px 12px;display:flex;flex-direction:column;gap:10px}
+  #layers{right:60px;bottom:124px;display:flex;gap:4px;padding:5px;border-radius:10px}
+  .lay{font-size:11.5px;padding:5px 10px;border-radius:7px;color:var(--mute);cursor:pointer;font-weight:600;display:flex;align-items:center;gap:5px}
+  .lay::before{content:"";width:8px;height:8px;border-radius:2px;border:1.5px solid currentColor}
+  .lay.on{color:var(--txt)}
+  .lay.on::before{background:var(--acc);border-color:var(--acc)}
+  .crow{display:flex;gap:10px;align-items:center;padding:8px;border-radius:9px;border:1px solid var(--line);background:var(--card2);cursor:pointer}
+  .crow:hover{border-color:var(--line2)}
+  .crow.on{border-color:var(--acc);background:#22332B}
+  .crow.down{opacity:.82}
+  .crow.hl{border-color:#E9D46B;box-shadow:0 0 0 1px #E9D46B}
+  .cn{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;color:#131C18;flex:none}
+  #map [data-cand].hl .cm-box{stroke:#E9D46B;stroke-width:5}
+  #map [data-cand].hl .cm-lab{stroke:#E9D46B}
+  .tdot{cursor:pointer}
+  .tdot.hl circle{stroke:#E9D46B;stroke-width:3}
+  .apill{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:11px;cursor:pointer;border:1px solid #7A3434;background:rgba(48,20,20,.95);font-size:12.5px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+  .zrow{display:flex;gap:10px;align-items:center;padding:8px;border-radius:9px;border:1px solid var(--line);background:var(--card2)}
+  .zrow .no{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#131C18;flex:none}
+  .stat{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .stat div{background:var(--card2);border:1px solid var(--line);border-radius:9px;padding:9px 10px}
+  .stat b{display:block;font-size:20px}
+  .stat span{font-size:11px;color:var(--sub)}
+  .busy{position:absolute;left:50%;top:76px;transform:translateX(-50%);z-index:9;display:flex;align-items:center;gap:10px;background:rgba(20,29,25,.96);border:1px solid var(--line2);border-radius:20px;padding:9px 16px;font-weight:600}
+  .spin{width:16px;height:16px;border:2.5px solid var(--line2);border-top-color:var(--acc);border-radius:50%;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .tab{cursor:pointer}
+  #map svg [data-cand],#map svg [data-scene]{cursor:pointer}
+  .ovl{position:fixed;inset:0;background:rgba(5,9,7,.68);z-index:50;display:flex;align-items:center;justify-content:center}
+  .modal{width:620px;background:var(--card);border:1px solid var(--line2);border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.6);display:flex;flex-direction:column}
+  .modal .mh{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  .modal .mb{padding:16px 20px;display:flex;flex-direction:column;gap:12px}
+  .modal .mf{padding:12px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+  .res{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .res div{border:1px solid var(--line2);border-radius:9px;padding:12px;display:flex;gap:10px;align-items:center;font-weight:600;color:var(--sub);cursor:pointer}
+  .res div.on{border-color:var(--acc);background:var(--accbg);color:var(--txt)}
+  input.inp,textarea.inp{font:inherit;outline:none;color-scheme:dark}
+</style></head>
+<body><aside class="side"></aside>
+<main><header class="top"></header>
+<section class="content" style="padding:0;gap:0">
+  <div id="ws">
+    <div class="mapbox" id="map"></div>
+    <div class="fp" id="modebar"></div>
+    <div class="fp" id="left"></div>
+    <div id="right"></div>
+    <div id="card"></div>
+    <div class="fp" id="layers"></div>
+    <div class="fp" id="strip"></div>
+  </div>
+</section></main>
+<script>
+/* ================= 상태 ================= */
+let S = Store.get(), dir = Q.get('dir') || 'next', sel = 0, card = null, viewMin = null, playing = null, prevZones = null, leftOpen = true, alertOpen = false, hlI = null;
+const layers = { danger: true, route: true, cand: true, range: true, names: false };
+const camView = { x: -230, y: -20, w: 1400 };   // 왼쪽 패널에 가리지 않게 처음부터 오른쪽으로 비켜서 보기
+const HI = '#EF4444', MID = '#F59E0B', LO = '#EAB308', LVC = { hi: HI, mid: MID, lo: LO }, LVN = { hi: '높음', mid: '중간', lo: '낮음' };
+const SPEED = 55;   // 시안용 가정 속도 (1분에 지도 55px)
+const PIN = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 22s-7-6-7-12a7 7 0 0 1 14 0c0 6-7 12-7 12z" fill="#EF4444"/><circle cx="12" cy="10" r="2.6" fill="#131C18"/></svg>';
+const ZONES = [
+  { n: '뒷산 산책로 입구', p: [1110, 70], tags: ['사각지대'] }, { n: '생활관 동측 사각지대', p: [1010, 210], tags: ['사각지대'] },
+  { n: '인문관 북측 보행로', p: [800, 160], tags: [] }, { n: '공학관 동측 주차장', p: [1080, 560], tags: ['사각지대'] },
+  { n: '공학관 별관 뒤편', p: [960, 610], tags: ['사각지대'] }, { n: '버스정류장 인근', p: [1110, 650], tags: [] },
+  { n: '체육관 뒤편', p: [130, 220], tags: ['사각지대'] }, { n: '학생회관 남측 화단', p: [330, 610], tags: [] },
+  { n: '도서관 서측 주차장', p: [470, 330], tags: [] }, { n: '공사장 펜스 주변', p: [480, 240], tags: [] },
+];
+
+/* ================= 데이터 도우미 ================= */
+const confirmedSorted = () => [...S.confirmed].sort(byTime);
+const baseScene = () => { const c = confirmedSorted(); if (!c.length) return reportScene(S); return dir === 'next' ? c[c.length - 1] : c[0]; };
+const keyOf = () => baseScene().report ? 'report' : `${dir}:${baseScene().cam}`;
+const decisions = () => S.confirmed.length + S.absent.length;
+const placeTxt = () => S.report.acc === '모름' ? '장소 모름' : CAM[S.report.cam][3] + (S.report.acc === '근처' ? ' 근처' : '');
+const bLabel = (b) => b.report ? `신고 지점` : `CAM-${b.cam}`;
+const hhmm = (sec) => `${String(Math.floor(sec / 3600)).padStart(2, '0')}:${String(Math.floor(sec % 3600 / 60)).padStart(2, '0')}`;
+function allCands() {
+  const known = new Set(S.confirmed.map(c => c.cam + c.t));
+  return candidatesFor(keyOf()).filter(c => !known.has(c.cam + c.t)).sort((a, b) => (b.score - (b.why ? 10 : 0)) - (a.score - (a.why ? 10 : 0)));
+}
+const visible = () => S.done[keyOf()] ? [] : allCands().filter(c => c.score >= S.threshold);
+const scenes = () => [...S.confirmed.map(c => ({ ...c, kind: 'c' })), ...S.temp.map(c => ({ ...c, kind: 't' }))].sort(byTime).map((s, i) => ({ ...s, n: i + 1, key: s.cam + s.t }));
+const lastC = () => confirmedSorted().pop() || reportScene(S);
+const prevC = () => { const c = confirmedSorted(); return c[c.length - 2]; };
+const elapsed = () => Math.max(0, (toSec(S.now) - toSec(lastC().t)) / 60);
+
+/* 현재 위치 범위 (길 네트워크 + 이탈 방향 가중치) */
+function rangeModel(min) {
+  const L = lastC(), P = prevC(), lp = [CAM[L.cam][0], CAM[L.cam][1]], src = CAMNODE[L.cam];
+  const { dist } = dijkstra(src), off = Math.hypot(lp[0] - NODE[src][0], lp[1] - NODE[src][1]);
+  const v = P ? [lp[0] - CAM[P.cam][0], lp[1] - CAM[P.cam][1]] : [0, -1], vl = Math.hypot(...v) || 1;
+  const cosTo = (x, y) => { const d = [x - lp[0], y - lp[1]], dl = Math.hypot(...d); return dl < 1 ? 1 : (d[0] * v[0] + d[1] * v[1]) / (dl * vl); };
+  const f = (x, y) => 1 - .25 * cosTo(x, y), r = min * SPEED, lv = (e) => e <= .45 * r ? 'hi' : e <= .75 * r ? 'mid' : e <= r ? 'lo' : null;
+  const pts = [];
+  EDGE.forEach(([a, b]) => {
+    const A = NODE[a], B = NODE[b], len = Math.hypot(B[0] - A[0], B[1] - A[1]), n = Math.max(2, Math.ceil(len / 26));
+    for (let i = 0; i < n; i++) {
+      const s0 = i / n, s1 = (i + 1) / n, sm = (s0 + s1) / 2, x = A[0] + (B[0] - A[0]) * sm, y = A[1] + (B[1] - A[1]) * sm;
+      const e = (Math.min(dist[a] + sm * len, dist[b] + (1 - sm) * len) + off) * f(x, y), l = lv(e);
+      if (l) pts.push({ x, y, l, x0: A[0] + (B[0] - A[0]) * s0, y0: A[1] + (B[1] - A[1]) * s0, x1: A[0] + (B[0] - A[0]) * s1, y1: A[1] + (B[1] - A[1]) * s1 });
+    }
+  });
+  const danger = Object.values(DANGER).filter(d => pts.some(p => inPoly(p.x, p.y, d.pts))).map(d => d.name);
+  const near = (x, y) => Object.values(DANGER).some(d => [[0, 0], [40, 0], [-40, 0], [0, 40], [0, -40]].some(([dx, dy]) => inPoly(x + dx, y + dy, d.pts)));
+  const zones = ZONES.map(z => {
+    const e = Math.min(...Object.keys(NODE).map(k => dist[k] + Math.hypot(NODE[k][0] - z.p[0], NODE[k][1] - z.p[1]))) * f(...z.p) + off;
+    const tags = [...z.tags]; if (cosTo(...z.p) > .45) tags.unshift('이탈 방향'); if (near(...z.p)) tags.unshift('위험 근접');
+    return { ...z, e, l: lv(Math.max(0, e - 40)), tags, rank: e - (tags.includes('사각지대') ? 50 : 0) - (tags.includes('위험 근접') ? 40 : 0) - (tags.includes('이탈 방향') ? 40 : 0) };
+  }).filter(z => z.l).sort((a, b) => a.rank - b.rank).slice(0, 3);
+  return { pts, danger, zones, lp, v };
+}
+
+/* ================= 후보 색: 목록·지도·시간축이 같은 번호/색을 쓴다 ================= */
+const CCOL = ['#7FC8A9', '#7FB3E0', '#C9A2E0', '#E0B07F', '#E08FA0', '#9FD0D8'];
+const candCol = (c, i) => CCOL[i % CCOL.length];   // 경로 불일치는 색이 아니라 점선 테두리·⚠로 표시
+const gapTxt = (c) => { const b = baseScene(), d = toSec(c.t) - toSec(b.t); const m = Math.floor(Math.abs(d) / 60), sec = Math.abs(d) % 60; return `${d >= 0 ? '+' : '−'}${m}분 ${String(sec).padStart(2, '0')}초`; };
+
+/* ================= 지도 ================= */
+const vid = (cam, t, look, lab, live) => videoSVG({ cam: `CAM-${cam} ${CAM[cam][3]}`, time: (live ? '' : '2026-11-08 ') + t, live, bx: 120 + (+cam * 17) % 160,
+  people: look ? [{ x: 320, y: 320, s: 1.7, top: look[0], bottom: look[1], box: '#89AD99', lab, sel: true }, { x: 540, y: 260, s: .8, top: '#55606A', bottom: '#2E3640' }]
+               : [{ x: 200 + (+cam * 37) % 300, y: 300, s: 1.2, top: '#56616B', bottom: '#2E3640' }, { x: 470, y: 260, s: .8, top: '#6B6F5A', bottom: '#3A3A33' }] });
+function photoMarker(c, i, on) {
+  const [x, y] = CAM[c.cam], w = 36, h = 52, col = candCol(c, i), lab = `${c.t.slice(0, 5)} · CAM-${c.cam}`, lw = lab.length * 7.2 + 16;
+  return `<g data-cand="${i}">
+    <line x1="${x}" y1="${y}" x2="${x}" y2="${y - 22}" stroke="${col}" stroke-width="2.5"/>
+    <rect class="cm-box" x="${x - w / 2 - 4}" y="${y - h - 30}" width="${w + 8}" height="${h + 8}" rx="8" fill="#1A2520" stroke="${col}" stroke-width="${on ? 4.5 : 2.5}" ${c.why ? 'stroke-dasharray="6 4"' : ''}/>
+    ${person(...c.look).replace('<svg ', `<svg x="${x - w / 2}" y="${y - h - 26}" width="${w}" height="${h}" `)}
+    <circle cx="${x - w / 2 - 4}" cy="${y - h - 30}" r="12" fill="${col}" stroke="#131C18" stroke-width="2"/><text x="${x - w / 2 - 4}" y="${y - h - 25.5}" text-anchor="middle" font-size="13" font-weight="800" fill="#131C18">${i + 1}</text>
+    <rect x="${x + w / 2 + 2}" y="${y - h - 24}" width="44" height="20" rx="10" fill="#131C18" stroke="${col}" stroke-width="1.5"/><text x="${x + w / 2 + 24}" y="${y - h - 9.5}" text-anchor="middle" font-size="12" font-weight="800" fill="${col}">${Math.round(c.score)}%</text>${c.why ? `<text x="${x + w / 2 + 52}" y="${y - h - 9}" font-size="14" fill="#E0B07F">⚠</text>` : ''}
+    <circle cx="${x}" cy="${y}" r="6" fill="${col}" stroke="#131C18" stroke-width="2"/>
+    <rect class="cm-lab" x="${x - lw / 2}" y="${y + 10}" width="${lw}" height="22" rx="6" fill="rgba(19,28,24,.92)" stroke="${col}" stroke-width="1.5"/>
+    <text x="${x}" y="${y + 25.5}" text-anchor="middle" font-size="12" font-weight="700" fill="#DEE7E0">${lab}</text>
+  </g>`;
+}
+function mapContent() {
+  let g = '';
+  const sc = scenes(), last = lastC(), R = S.report, mode = MODE;
+  if (mode === 'search' && layers.range) {
+    const M = rangeModel(viewMin ?? elapsed());
+    ['lo', 'mid', 'hi'].forEach(l => g += `<g opacity="${l === 'hi' ? .2 : l === 'mid' ? .14 : .1}">${M.pts.filter(p => p.l === l).map(p => `<circle cx="${p.x}" cy="${p.y}" r="44" fill="${LVC[l]}"/>`).join('')}</g>`);
+    g += M.pts.map(p => `<line x1="${p.x0}" y1="${p.y0}" x2="${p.x1}" y2="${p.y1}" stroke="${LVC[p.l]}" stroke-width="14" stroke-opacity=".8" stroke-linecap="round"/>`).join('');
+    const vl = Math.hypot(...M.v) || 1; g += `<line x1="${M.lp[0]}" y1="${M.lp[1]}" x2="${M.lp[0] + M.v[0] / vl * 80}" y2="${M.lp[1] + M.v[1] / vl * 80}" stroke="#DEE7E0" stroke-width="3" marker-end="url(#arr)"/>`;
+    g += M.zones.map((z, i) => `<g><rect x="${z.p[0] - 15}" y="${z.p[1] - 15}" width="30" height="30" rx="7" fill="${LVC[z.l]}" stroke="${prevZones && !prevZones.includes(z.n) ? '#E9D46B' : '#131C18'}" stroke-width="3"/><text x="${z.p[0]}" y="${z.p[1] + 6}" text-anchor="middle" font-size="16" font-weight="800" fill="#131C18">${i + 1}</text></g>`).join('');
+  }
+  if (layers.route) {
+    for (let i = 1; i < sc.length; i++) {
+      const p = camPath(sc[i - 1].cam, sc[i].cam), tmp = sc[i].kind === 't' || sc[i - 1].kind === 't', thin = mode !== 'route';
+      g += `<polyline points="${ptsStr(p.pts)}" fill="none" stroke="#89AD99" stroke-width="${thin ? 3.5 : 6}" ${tmp ? 'stroke-dasharray="10 8"' : ''} stroke-opacity="${thin ? .7 : 1}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
+    g += S.absent.filter(a => CAM[a.cam] && a.cam !== baseScene().cam).map(a => { const [x, y] = CAM[a.cam];
+      return `<g><circle cx="${x}" cy="${y}" r="11" fill="#26342D" stroke="#6E7F75" stroke-dasharray="3 3"/><path d="M${x - 4.5} ${y - 4.5}l9 9M${x + 4.5} ${y - 4.5}l-9 9" stroke="#8FA197" stroke-width="2"/></g>`; }).join('');
+  }
+  if (R.acc !== '모름') {
+    const x = CAM[R.cam][0] - 34, y = CAM[R.cam][1] + 30;
+    g += `${R.acc === '근처' ? `<circle cx="${x}" cy="${y}" r="60" fill="#EF4444" fill-opacity=".05" stroke="#EF4444" stroke-opacity=".45" stroke-dasharray="6 5"/>` : ''}
+      <path d="M${x} ${y}c0-14-10-20-10-28a10 10 0 0 1 20 0c0 8-10 14-10 28z" fill="#EF4444" stroke="#131C18" stroke-width="2"/><circle cx="${x}" cy="${y - 30}" r="3.5" fill="#131C18"/>`;
+  }
+  if (sc.length) g += `<circle cx="${CAM[last.cam][0]}" cy="${CAM[last.cam][1]}" r="40" fill="url(#pulse)"/>`;
+  if (layers.route) g += sc.map(s => { const [x, y] = CAM[s.cam], tmp = s.kind === 't', on = card && card.type === 'scene' && card.key === s.key;
+    return `<g data-scene="${s.key}">${on ? `<circle cx="${x}" cy="${y}" r="24" fill="#89AD99" fill-opacity=".25"/>` : ''}<circle cx="${x}" cy="${y}" r="14" fill="${tmp ? '#131C18' : '#89AD99'}" stroke="${tmp ? '#89AD99' : '#131C18'}" stroke-width="2.5" ${tmp ? 'stroke-dasharray="4 3"' : ''}/>
+      <text x="${x}" y="${y + 4.5}" text-anchor="middle" font-size="13" font-weight="800" fill="${tmp ? '#89AD99' : '#14201A'}">${s.n}</text></g>`; }).join('');
+  if (mode === 'cand' && layers.cand) {
+    const vis = visible(), b = baseScene();
+    vis.forEach((c, i) => { const p = camPath(b.cam, c.cam), on = i === sel && card && card.type === 'cand';
+      g += `<polyline points="${ptsStr(p.pts)}" fill="none" stroke="${candCol(c, i)}" stroke-width="${on ? 4 : 2}" stroke-opacity="${on ? 1 : .5}" stroke-dasharray="7 6" stroke-linejoin="round"/>`; });
+    g += vis.map((c, i) => photoMarker(c, i, i === sel && card && card.type === 'cand')).join('');
+  }
+  if (mode === 'search' || S.alerts.length) g += [...S.alerts.map(a => ({ ...a, c: '#EF4444' })), ...S.pending.map(p => ({ ...p, c: '#F59E0B' }))].map(a => { const [x, y] = CAM[a.cam];
+    return `<circle cx="${x}" cy="${y}" r="18" fill="none" stroke="${a.c}" stroke-width="3"><animate attributeName="r" values="11;24;11" dur="1.4s" repeatCount="indefinite"/></circle>`; }).join('');
+  if (card && card.cam) g += `<circle cx="${CAM[card.cam][0]}" cy="${CAM[card.cam][1]}" r="9" fill="none" stroke="#DEE7E0" stroke-width="2.5"/>`;
+  return g;
+}
+function renderMap() {
+  const map = document.getElementById('map');
+  map.innerHTML = mapSVG(mapContent(), { danger: layers.danger, dangerLabel: layers.danger, camLabels: layers.names, dimCams: true, keep: [] });
+  enablePanZoom(map, camView);
+  const z = map.querySelector('.zoom'); z.style.cssText = 'right:14px;bottom:124px;top:auto';
+  camView.onChange = positionCard;
+  const svg = map.querySelector('svg');
+  svg.onclick = (e) => {
+    if (camView.moved) { camView.moved = false; return; }
+    const cd = e.target.closest('[data-cand]'), sd = e.target.closest('[data-scene]');
+    if (cd) { sel = +cd.dataset.cand; openCard({ type: 'cand' }); return; }
+    if (sd) { openCard({ type: 'scene', key: sd.dataset.scene }); return; }
+    const m = svg.getScreenCTM(), pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const q = pt.matrixTransform(m.inverse());
+    let best = null, bd = 1e9; Object.entries(CAM).forEach(([id, c]) => { const d = Math.hypot(c[0] - q.x, c[1] - q.y); if (d < bd) { bd = d; best = id; } });
+    if (bd * m.a < 26) openCard({ type: 'cam', cam: best }); else if (card) closeCard();
+  };
+}
+function fitCands() {
+  const vis = visible(), b = baseScene(); if (!vis.length) return;
+  const P = [b.cam, ...vis.map(c => c.cam)].map(id => CAM[id]);
+  const minx = Math.min(...P.map(p => p[0])) - 110, maxx = Math.max(...P.map(p => p[0])) + 110, miny = Math.min(...P.map(p => p[1])) - 120, maxy = Math.max(...P.map(p => p[1])) + 60;
+  const ws = document.getElementById('ws'), W = ws.offsetWidth, H = ws.offsetHeight, L = leftOpen ? 380 : 70, R = 40, T = 70, B = 130;
+  const s = Math.min((W - L - R) / (maxx - minx), (H - T - B) / (maxy - miny), W / 360);      // 화면 px / 지도 단위
+  const vw = W / H >= 1.5 ? 1.5 * H / s : W / s, ox = (W - vw * s) / 2, oy = (H - vw * 2 / 3 * s) / 2;
+  camView.w = vw; camView.x = minx - (L - ox) / s - ((W - L - R) - (maxx - minx) * s) / 2 / s; camView.y = miny - (T - oy) / s - ((H - T - B) - (maxy - miny) * s) / 2 / s;
+}
+function focusCam(cam, w) { const nw = w || Math.min(camView.w, 760); camView.w = nw; camView.x = CAM[cam][0] - nw * .55; camView.y = CAM[cam][1] - nw * 800 / 1200 / 2; }
+
+/* ================= 지도 위 영상 카드 ================= */
+function openCard(c) {
+  if (c.type === 'cand') { const v = visible()[sel]; if (!v) return; c.cam = v.cam; }
+  if (c.type === 'scene') c.cam = scenes().find(s => s.key === c.key)?.cam;
+  card = c; renderMap(); renderLeft(); renderStrip(); renderCard();
+}
+function closeCard() { card = null; document.getElementById('card').className = ''; renderMap(); renderLeft(); renderStrip(); }
+function renderCard() {
+  const el = document.getElementById('card');
+  if (!card) { el.className = ''; return; }
+  let head, body, foot = '';
+  if (card.type === 'cand') {
+    const vis = visible(), c = vis[sel]; if (!c) { closeCard(); return; }
+    const b = baseScene(), p = camPath(b.cam, c.cam), m = Math.round(p.len * PX2M), gap = Math.abs(toSec(c.t) - toSec(b.t));
+    head = `<span class="cn" style="background:${candCol(c, sel)}">${sel + 1}</span><b class="num">${c.t}</b><b>CAM-${c.cam} · ${c.name}</b><b class="num" style="margin-left:auto;font-size:16px;color:${candCol(c, sel)}">${c.score}%</b>`;
+    body = `<div style="height:236px;border-radius:8px;overflow:hidden;border:1px solid var(--line)">${vid(c.cam, c.t, c.look, `후보 ${sel + 1}`)}</div>${playerBar(0, [[30, 60]], `00:00 / 00:${String(toSec(c.t2) - toSec(c.t)).padStart(2, '0')}`)}
+      <div class="row" style="gap:10px;align-items:center">${thumb(40, 58, TARGET, '질의')}${thumb(40, 58, c.look, '후보')}
+        <div class="grow cap" style="line-height:1.7">${ICON.route.replace('<svg', '<svg width="12" height="12" style="vertical-align:-2px"')} ${bLabel(b)} → CAM-${c.cam} · ${m} m<br>${ICON.clock.replace('<svg', '<svg width="12" height="12" style="vertical-align:-2px"')} ${c.t} · 기준에서 ${fmtDur(gap)}
+        ${c.why ? `<br><span style="color:#C9B27A">${ICON.warn.replace('<svg', '<svg width="12" height="12" style="vertical-align:-2px"')} ${c.why}</span>` : ''}</div></div>`;
+    foot = `<div class="row" style="gap:8px"><button class="btn pri lg" style="flex:1.5" id="c-yes">${ICON.check}이 사람이 맞음</button><button class="btn lg" style="flex:1" id="c-next">다음 후보 ${ICON.arrowR}</button></div>`;
+  } else if (card.type === 'scene') {
+    const s = scenes().find(x => x.key === card.key); if (!s) { closeCard(); return; }
+    head = `<span class="bdg ${s.kind === 't' ? 'temp' : 'conf'}">${s.kind === 't' ? '임시' : '확정'} ${s.n}</span><b>CAM-${s.cam} · ${CAM[s.cam][3]}</b><span class="cap num" style="margin-left:auto">${s.t}</span>`;
+    body = `<div style="height:236px;border-radius:8px;overflow:hidden;border:1px solid var(--line)">${vid(s.cam, s.t, TARGET, `${s.n} ${s.kind === 't' ? '임시' : '확정'}`)}</div>${playerBar(0, [[20, 64]], '00:00 / 00:24')}
+      <div class="cap">${s.manual ? '담당자가 영상에서 직접 선택' : s.kind === 't' ? `시스템 임시 확정 · 유사도 ${s.score}% · 확인 필요` : `담당자 확인 · 유사도 ${s.score}%`}</div>`;
+    foot = s.kind === 't' ? `<div class="row" style="gap:8px"><button class="btn pri" style="flex:1" id="s-promote">${ICON.check}확정으로 변경</button><button class="btn" style="flex:1" id="s-drop">${ICON.x}아님</button></div>`
+                          : `<div class="row"><span class="grow"></span><button class="btn sm" id="s-undo">확정 취소</button></div>`;
+  } else {
+    const live = MODE === 'search', t = live ? S.now + ':0' + card.cam.slice(1) : baseScene().t;
+    head = `<span class="bdg ${live ? 'hi' : 'gray'} nd">${live ? 'LIVE' : '녹화'}</span><b>CAM-${card.cam} · ${CAM[card.cam][3]}</b>`;
+    body = `<div style="height:236px;border-radius:8px;overflow:hidden;border:1px solid var(--line)">${vid(card.cam, t, null, '', live)}</div>${playerBar(live ? 100 : 0, [], live ? '실시간 · 녹화 재생 모드' : `${t.slice(0, 5)} 부근 · ±${S.report.tol}분`)}
+      <div class="cap">${live ? '실시간 감시 중인 카메라입니다. 실종자로 보이는 사람이 나타나면 알림이 뜹니다.' : '기준 시각 부근 녹화 영상입니다. 후보가 아닌 카메라도 이렇게 직접 열어볼 수 있습니다.'}</div>`;
+  }
+  el.innerHTML = `<div class="arrow"></div><div class="vc"><div class="vh">${head}<span class="ib" id="c-x" style="${card.type === 'cand' ? '' : 'margin-left:auto'}">${ICON.x.replace('<svg', '<svg width="14" height="14"')}</span></div><div class="vb">${body}${foot}</div></div>`;
+  el.className = 'show';
+  const on = (id, f) => { const e = document.getElementById(id); if (e) e.onclick = f; };
+  on('c-x', closeCard);
+  on('c-yes', () => confirmCand(visible()[sel]));
+  on('c-next', () => { const n = visible().length; sel = (sel + 1) % n; openCard({ type: 'cand' }); });
+  on('s-promote', () => { const t = S.temp.find(x => x.cam + x.t === card.key); S.temp = S.temp.filter(x => x !== t); S.confirmed.push({ cam: t.cam, t: t.t, score: t.score }); Store.set(S); toast(`CAM-${t.cam} 장면을 확정했습니다.`); card = null; renderAll(); });
+  on('s-drop', () => { const t = S.temp.find(x => x.cam + x.t === card.key); S.temp = S.temp.filter(x => x !== t); Store.set(S); toast(`CAM-${t.cam} 임시 확정을 해제했습니다.`, 'info'); card = null; renderAll(); });
+  on('s-undo', () => { const c = S.confirmed.find(x => x.cam + x.t === card.key); S.confirmed = S.confirmed.filter(x => x !== c); S.done = {}; Store.set(S); toast(`CAM-${c.cam} 확정을 취소했습니다.`, 'warn'); card = null; renderAll(); });
+  positionCard();
+}
+function positionCard() {
+  const el = document.getElementById('card'); if (!card || !card.cam || !el.querySelector('.arrow')) return;   // 카드가 아직 그려지기 전이면 건너뜀
+  const ws = document.getElementById('ws'), svg = document.querySelector('#map svg'), k = window.__scale || 1;
+  const pt = svg.createSVGPoint(); pt.x = CAM[card.cam][0]; pt.y = CAM[card.cam][1]; const p = pt.matrixTransform(svg.getScreenCTM()), r = ws.getBoundingClientRect();
+  const x = (p.x - r.left) / k, y = (p.y - r.top) / k, W = ws.offsetWidth, H = ws.offsetHeight, cw = 440, ch = el.offsetHeight || 420;
+  const right = x + 28 + cw < W - 14, left = right ? x + 28 : x - 28 - cw;
+  const top = Math.min(Math.max(66, y - 116), H - 124 - ch);
+  el.style.left = Math.max(14, left) + 'px'; el.style.top = top + 'px';
+  const ar = el.querySelector('.arrow'); ar.style.top = Math.min(Math.max(14, y - top - 6), ch - 26) + 'px';
+  ar.style.left = right ? '-6px' : ''; ar.style.right = right ? '' : '-6px'; ar.style.transform = right ? 'rotate(45deg)' : 'rotate(-135deg)';
+}
+
+/* ================= 상단 모드 바 ================= */
+let MODE = Q.get('mode') || (S.closed ? 'route' : !confirmedSorted().length || !S.done[keyOf()] ? 'cand' : S.alerts.length ? 'search' : 'route');
+function setMode(m) { MODE = m; card = null; viewMin = null; stopPlay(); layers.danger = m !== 'cand'; history.replaceState(null, '', `?mode=${m}`); if (m === 'cand') fitCands(); renderAll(); }
+function renderModebar() {
+  const nc = visible().length, na = S.alerts.length + S.pending.length;
+  document.getElementById('modebar').innerHTML = [['cand', ICON.user, '후보 확인', nc ? `<span class="n">${nc}</span>` : ''], ['route', ICON.route, '동선', `<span class="n">${S.confirmed.length}</span>`],
+    ['search', ICON.target, '수색·감시', na && !S.closed ? `<span class="n hi">${na}</span>` : '']].map(([k, ic, l, n]) => `<span class="mode ${MODE === k ? 'on' : ''}" data-m="${k}">${ic.replace('<svg', '<svg width="15" height="15"')}${l}${n}</span>`).join('') +
+    `<span style="width:1px;height:22px;background:var(--line2)"></span>` + (S.closed ? `<span class="bdg gray nd" style="height:30px">종결 · ${S.closed.result === 'found' ? '발견' : '미발견'}</span><span class="btn sm ghost" id="reopen">종결 취소</span>` : `<span class="btn sm dan" id="closeBtn">${ICON.flag}사건 종결</span>`);
+  document.querySelectorAll('.mode').forEach(m => m.onclick = () => setMode(m.dataset.m));
+  const cb = document.getElementById('closeBtn'); if (cb) cb.onclick = openClose;
+  const ro = document.getElementById('reopen'); if (ro) ro.onclick = () => { S.closed = null; Store.set(S); renderAll(); };
+}
+
+/* ================= 왼쪽 패널 ================= */
+function renderLeft() {
+  const el = document.getElementById('left'); el.className = 'fp' + (leftOpen ? '' : ' closed');
+  const titles = { cand: ['후보 확인', ICON.user], route: ['동선', ICON.route], search: ['수색·감시', ICON.target] };
+  let body = '';
+  if (MODE === 'cand') body = leftCand();
+  if (MODE === 'route') body = leftRoute();
+  if (MODE === 'search') body = leftSearch();
+  el.innerHTML = `<div class="lh"><span class="ib" id="ltoggle" title="${leftOpen ? '패널 접기' : '패널 펴기'}">${(leftOpen ? ICON.arrowL : titles[MODE][1]).replace('<svg', '<svg width="15" height="15"')}</span><b class="lt" style="font-size:15px">${titles[MODE][0]}</b>${MODE === 'cand' ? `<span class="chip lt" style="margin-left:auto;height:22px">${decisions() + 1}회차</span>` : ''}</div><div class="lb">${body}</div>`;
+  document.getElementById('ltoggle').onclick = () => { leftOpen = !leftOpen; renderLeft(); };
+  bindLeft();
+}
+function candAxis(vis, b) {
+  // 기준 시각부터 검색 창 끝까지 시간축 위에 후보를 번호로 찍는다
+  const bs = toSec(b.t), tol = S.report.tol * 60;
+  const t0 = b.report ? bs - tol : dir === 'next' ? bs : bs - 16 * 60, t1 = b.report ? bs + 16 * 60 : dir === 'next' ? bs + 16 * 60 : bs;
+  const X = (t) => 16 + (t - t0) / (t1 - t0) * 288;
+  let ticks = ''; for (let t = Math.ceil(t0 / 300) * 300; t <= t1; t += 300) ticks += `<line x1="${X(t)}" y1="40" x2="${X(t)}" y2="45" stroke="#3A4B41"/><text x="${X(t)}" y="57" text-anchor="middle" font-size="10" fill="#6E7F75">${hhmm(t)}</text>`;
+  const bx = X(bs);
+  // 같은 시각대 겹침을 피하려고 번갈아 위아래로
+  const dots = vis.map((c, i) => { const x = X(toSec(c.t)), up = i % 2 === 0, cy = up ? 16 : 30, col = candCol(c, i);
+    return `<g class="tdot" data-ci="${i}"><line x1="${x}" y1="${cy}" x2="${x}" y2="42" stroke="${col}" stroke-width="1.5" stroke-opacity=".6"/><circle cx="${x}" cy="${cy}" r="9" fill="${col}" stroke="#131C18" stroke-width="2"/><text x="${x}" y="${cy + 4}" text-anchor="middle" font-size="10.5" font-weight="800" fill="#131C18">${i + 1}</text></g>`; }).join('');
+  return `<div><div class="row" style="align-items:baseline"><span class="cap">언제 나왔나</span><span class="cap" style="margin-left:auto">점을 누르면 영상</span></div>
+    <svg viewBox="0 0 320 60" style="width:100%;height:auto;display:block;margin-top:4px">
+      <line x1="16" y1="42" x2="304" y2="42" stroke="#3A4B41" stroke-width="2"/>${ticks}
+      ${b.report ? `<rect x="${X(bs - tol)}" y="38" width="${X(bs + tol) - X(bs - tol)}" height="8" rx="3" fill="#EF4444" fill-opacity=".18"/>` : ''}
+      <line x1="${bx}" y1="6" x2="${bx}" y2="46" stroke="${b.report ? '#EF4444' : '#DEE7E0'}" stroke-width="2" stroke-dasharray="${b.report ? '3 3' : ''}"/>
+      <text x="${bx + (dir === 'prev' && !b.report ? -4 : 4)}" y="10" font-size="10" font-weight="700" text-anchor="${dir === 'prev' && !b.report ? 'end' : 'start'}" fill="${b.report ? '#F87171' : '#DEE7E0'}">${b.report ? '신고' : '기준'} ${b.t.slice(0, 5)}</text>
+      ${dots}
+    </svg></div>`;
+}
+function leftCand() {
+  const b = baseScene(), all = allCands(), vis = visible(), k = keyOf(), bs = toSec(b.t);
+  const win = b.report ? `${hhmm(bs - S.report.tol * 60)}–${hhmm(bs + 16 * 60)}` : dir === 'next' ? `${hhmm(bs)}–${hhmm(bs + 16 * 60)}` : `${hhmm(bs - 16 * 60)}–${hhmm(bs)}`;
+  let h = `<div class="row" style="gap:10px;align-items:center">${b.report ? `<div style="width:34px;height:48px;border:1.5px dashed #EF4444;border-radius:6px;display:flex;align-items:center;justify-content:center;flex:none">${PIN}</div>` : thumb(34, 48, TARGET)}
+    <div class="grow" style="min-width:0"><div class="cap">${b.report ? '신고 지점에서 검색 (영상 아님)' : dir === 'next' ? '이 장면 이후를 검색' : '이 장면 이전을 검색'}</div><b>${b.report ? placeTxt() : `CAM-${b.cam} · ${CAM[b.cam][3]}`}</b><div class="cap num">${b.report ? `${S.report.t} ±${S.report.tol}분` : b.t} · 검색 ${win}</div></div></div>`;
+  if (!b.report) h += `<div class="tabs"><span class="tab ${dir === 'prev' ? 'on' : ''}" data-d="prev" style="flex:1;text-align:center">← 이전</span><span class="tab ${dir === 'next' ? 'on' : ''}" data-d="next" style="flex:1;text-align:center">이후 →</span></div>`;
+  h += `<div><div class="row" style="align-items:baseline"><span class="cap">유사도 기준</span><b class="num" id="thrv" style="margin-left:auto">${S.threshold}%</b></div>
+    <div class="slider" id="thr" style="margin-top:4px"><div class="tr"><i style="width:${S.threshold}%"></i></div><span class="kn" style="left:${S.threshold}%"></span></div></div>`;
+  if (S.done[k]) {
+    h += `<div class="cap" style="padding:8px 0">${ICON.check.replace('<svg', '<svg width="13" height="13" style="vertical-align:-2px;color:var(--acc)"')} 이 구간은 확인을 마쳤습니다.</div>
+      ${b.report ? '' : `<button class="btn" data-a="flip">${dir === 'next' ? ICON.arrowL + '이전 구간 검색' : '이후 구간 검색' + ICON.arrowR}</button>`}
+      <button class="btn" data-a="route">${ICON.route}동선 보기</button><button class="btn pri" data-a="search">${ICON.target}수색 시작</button>`;
+  } else if (!all.length) {
+    h += `<div class="cap" style="padding:8px 0">도보로 갈 수 있는 카메라에서 후보를 찾지 못했습니다. 사각지대로 이동했을 수 있습니다.</div>
+      <button class="btn pri" data-a="absent">${ICON.flag}이 구간을 부재로 기록</button>${b.report ? '' : '<button class="btn" data-a="flip">반대 방향 검색</button>'}`;
+  } else if (!vis.length) {
+    const mx = Math.max(...all.map(c => c.score)), to = Math.max(50, Math.floor(mx / 5) * 5);
+    h += `<div class="cap" style="padding:8px 0">기준 ${S.threshold}% 이상인 후보가 없습니다. 가장 높은 후보는 ${mx}%입니다.</div>
+      <button class="btn" data-a="lower" data-to="${to}">기준 낮추기 (${S.threshold}% → ${to}%)</button><button class="btn pri" data-a="absent">${ICON.flag}부재로 기록</button>`;
+  } else {
+    h += candAxis(vis, b);
+    h += `<div class="row" style="align-items:baseline"><span class="cap">후보 ${vis.length}명 · 유사도 순</span>${all.length - vis.length ? `<span class="cap" style="margin-left:auto">기준 미만 ${all.length - vis.length}명 숨김</span>` : ''}</div>`;
+    h += vis.map((c, i) => { const col = candCol(c, i);
+      return `<div class="crow ${i === sel && card && card.type === 'cand' ? 'on' : ''} ${c.why ? 'down' : ''}" data-ci="${i}" style="align-items:flex-start">
+      <span class="cn" style="background:${col};margin-top:2px">${i + 1}</span>${thumb(40, 58, c.look)}
+      <div class="grow" style="min-width:0">
+        <div class="row" style="align-items:baseline;gap:6px"><b class="num" style="font-size:15px">${c.t}</b><span class="cap num">${gapTxt(c)}</span><b class="num" style="margin-left:auto;font-size:15px;color:${col}">${c.score}%</b></div>
+        <div style="font-size:12.5px;margin:2px 0 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><b>CAM-${c.cam}</b> · ${c.name}</div>
+        <div class="bar"><i style="width:${c.score}%;background:${col}"></i></div>
+        ${c.why ? `<div class="cap" style="color:#C9B27A;margin-top:5px;line-height:1.4">${ICON.warn.replace('<svg', '<svg width="12" height="12" style="vertical-align:-2px"')} ${c.why}</div>` : ''}
+      </div></div>`; }).join('');
+    h += `<button class="btn" data-a="absent" style="margin-top:4px">${ICON.x}후보 중에 없음</button>`;
+  }
+  return h;
+}
+function leftRoute() {
+  const c = confirmedSorted(); let dist = 0; for (let i = 1; i < c.length; i++) dist += camPath(c[i - 1].cam, c[i].cam).len * PX2M;
+  const span = c.length > 1 ? Math.round((toSec(c[c.length - 1].t) - toSec(c[0].t)) / 60) : 0;
+  return `<div class="stat"><div><b class="num">${c.length}</b><span>확정 장면</span></div><div><b class="num" style="color:var(--acc)">${S.temp.length}</b><span>임시 (확인 필요)</span></div>
+      <div><b class="num">${Math.round(dist)}<small style="font-size:12px"> m</small></b><span>확정 이동 거리</span></div><div><b class="num">${span}<small style="font-size:12px">분</small></b><span>동선 시간 범위</span></div></div>
+    ${S.temp.length ? `<div class="crow" data-scene="${S.temp[0].cam + S.temp[0].t}" style="border-style:dashed;border-color:var(--acc)">${ICON.eye.replace('<svg', '<svg width="16" height="16" style="color:var(--acc)"')}<div class="grow"><b>임시 확정 ${S.temp.length}건</b><div class="cap">눌러서 영상 확인 후 확정·해제</div></div></div>` : ''}
+    ${S.absent.length ? `<div class="cap">부재 기록 ${S.absent.length}건 · 지도에 회색 ✕로 표시</div>` : ''}
+    <div class="cap" style="margin-top:4px">구간 더 찾기</div>
+    <div class="row" style="gap:6px"><button class="btn" style="flex:1" data-a="prev">${ICON.arrowL}이전</button><button class="btn" style="flex:1" data-a="next">이후${ICON.arrowR}</button></div>
+    <button class="btn pri" data-a="search">${ICON.target}현재 위치 수색</button>
+    <div class="cap" style="margin-top:auto">아래 타임라인이나 지도 번호를 누르면 그 장면 영상이 지도 위에 뜹니다.</div>`;
+}
+function leftSearch() {
+  const el = elapsed(), min = viewMin ?? el, M = rangeModel(el);
+  let h = `<div><div class="row" style="align-items:baseline;gap:8px"><span class="btn sm" id="play" style="padding:0 8px">${playing ? PAUSE_SVG : ICON.play}</span><b class="num" style="font-size:18px" id="minv">${Math.round(min)}분</b><span class="cap">${lastC().report ? '신고 후' : '마지막 확정 후'} · 현재 ${Math.round(el)}분</span></div>
+    <div class="slider" id="tsl" style="margin-top:8px"><div class="tr"><i style="width:${min / 20 * 100}%"></i></div><span class="kn" style="left:${min / 20 * 100}%"></span><span class="mk" style="left:${el / 20 * 100}%"></span></div>
+    <div class="cap" style="display:flex;justify-content:space-between;margin-top:3px"><span>0</span><span>10분</span><span>20분</span></div></div>
+    <div class="row" style="gap:10px;font-size:11.5px"><span><span class="sw" style="background:${HI}"></span> 높음</span><span><span class="sw" style="background:${MID}"></span> 중간</span><span><span class="sw" style="background:${LO}"></span> 낮음</span></div>`;
+  if (M.danger.length) h += `<div class="crow" style="border-color:#7A3434;background:rgba(239,68,68,.08);cursor:default">${ICON.warn.replace('<svg', '<svg width="16" height="16" style="color:#F87171"')}<div class="cap" style="color:#FCA5A5">범위가 ‘${M.danger.join('’, ‘')}’과 겹칩니다</div></div>`;
+  h += `<div class="cap" style="margin-top:2px">수색 우선 구역</div>` + (M.zones.length ? M.zones.map((z, i) => { const chg = prevZones && !prevZones.includes(z.n);
+    return `<div class="zrow ${chg ? 'chg-glow' : ''}"><span class="no" style="background:${LVC[z.l]}">${i + 1}</span><div class="grow" style="min-width:0"><b style="font-size:12.5px">${z.n}</b>${chg ? ' <span class="bdg chg nd" style="height:18px">변경</span>' : ''}<div class="cap">${z.tags.join(' · ') || '거리 기준'} · ${Math.round(z.e * PX2M)} m</div></div></div>`; }).join('') : '<div class="cap">아직 범위 안에 구역이 없습니다.</div>');
+  h += `<div class="row" style="align-items:center;gap:8px;margin-top:4px"><span class="dot" style="background:${S.closed ? '#6E7F75' : '#EF4444'};margin:0"></span><b style="font-size:12.5px">${S.closed ? '감시 종료' : '전체 카메라 감시 중'}</b><span class="bdg nd" style="margin-left:auto;height:20px">녹화 재생</span></div>`;
+  h += S.pending.length ? `<div class="cap">확인 대기 (중간 점수)</div>` + S.pending.map((p, i) => `<div class="zrow">${thumb(28, 40, ['#A9554C', '#3E4F66', { child: true }])}<div class="grow"><b class="num">${p.score}%</b><div class="cap">CAM-${p.cam} · ${p.t.slice(0, 5)}</div></div><span class="btn sm" data-ok="${i}">맞음</span><span class="btn sm ghost" data-no="${i}">아님</span></div>`).join('') : '';
+  return h;
+}
+function bindLeft() {
+  document.querySelectorAll('#left .tab[data-d]').forEach(t => t.onclick = () => { if (t.dataset.d !== dir) { dir = t.dataset.d; sel = 0; busy('반대 방향 구간을 검색하는 중…', () => { fitCands(); renderAll(); }); } });
+  const thr = document.getElementById('thr');
+  if (thr) bindSlider(thr, (v) => { S.threshold = Math.round(v * 100); setSlider(thr, S.threshold / 100); document.getElementById('thrv').textContent = S.threshold + '%'; sel = 0; card = null; document.getElementById('card').className = ''; renderMap(); renderModebar(); }, () => { Store.set(S); renderLeft(); });
+  document.querySelectorAll('#left [data-ci]').forEach(r => r.onclick = () => { sel = +r.dataset.ci; openCard({ type: 'cand' }); });
+  document.querySelectorAll('#left [data-scene]').forEach(r => r.onclick = () => { focusCam(r.dataset.scene.slice(0, 2)); openCard({ type: 'scene', key: r.dataset.scene }); });
+  document.querySelectorAll('#left [data-a]').forEach(bt => bt.onclick = () => {
+    const a = bt.dataset.a;
+    if (a === 'flip') { dir = dir === 'next' ? 'prev' : 'next'; sel = 0; busy('반대 방향 구간을 검색하는 중…', () => { fitCands(); renderAll(); }); }
+    if (a === 'lower') { S.threshold = +bt.dataset.to; Store.set(S); renderAll(); }
+    if (a === 'absent') markAbsent();
+    if (a === 'route') setMode('route');
+    if (a === 'search') setMode('search');
+    if (a === 'prev' || a === 'next') { dir = a; sel = 0; setMode('cand'); }
+  });
+  const tsl = document.getElementById('tsl');
+  if (tsl) {
+    bindSlider(tsl, (v) => { stopPlay(); viewMin = v * 20; setSlider(tsl, v); document.getElementById('minv').textContent = Math.round(viewMin) + '분'; renderMap(); },
+      () => { if (Math.abs(viewMin - elapsed()) < .6) viewMin = null; renderMap(); });
+    document.getElementById('play').onclick = () => {
+      if (playing) { stopPlay(); renderLeft(); return; }
+      let t = 0; const end = elapsed();
+      playing = setInterval(() => { t += Math.max(end, 1) / 30; viewMin = Math.min(t, end); const v = viewMin / 20; setSlider(tsl, v); document.getElementById('minv').textContent = Math.round(viewMin) + '분'; renderMap();
+        if (t >= end) { stopPlay(); viewMin = null; renderLeft(); renderMap(); } }, 60);
+      renderLeftPlayIcon();
+    };
+  }
+  document.querySelectorAll('#left [data-ok]').forEach(b => b.onclick = () => acceptSighting(S.pending[+b.dataset.ok], 'pending'));
+  document.querySelectorAll('#left [data-no]').forEach(b => b.onclick = () => { const p = S.pending.splice(+b.dataset.no, 1)[0]; S.unread = Math.max(0, S.unread - 1); Store.set(S); toast(`CAM-${p.cam} 후보를 아님으로 기록했습니다.`, 'info'); renderAll(); });
+}
+function renderLeftPlayIcon() { const p = document.getElementById('play'); if (p) p.innerHTML = playing ? PAUSE_SVG : ICON.play; }
+function stopPlay() { if (playing) { clearInterval(playing); playing = null; } }
+
+/* ================= 오른쪽: 출현 알림 ================= */
+function renderRight() {
+  const A = S.alerts[0], el = document.getElementById('right');
+  if (A && !S.closed && MODE === 'cand' && !alertOpen) {
+    el.innerHTML = `<div class="apill" id="apill"><span class="dot" style="background:#EF4444;margin:0"></span><b style="color:#FCA5A5">출현 알림 ${S.alerts.length}</b><span class="cap">CAM-${A.cam} · ${A.score}%</span><span class="cap" style="margin-left:auto">펼치기 ▾</span></div>`;
+    document.getElementById('apill').onclick = () => { alertOpen = true; renderRight(); };
+    return;
+  }
+  el.innerHTML = A && !S.closed ? `<div class="alert">
+    <div class="row" style="align-items:center;gap:8px"><span class="bdg hi">즉시 알림</span><b style="color:#FCA5A5;font-size:12.5px">실종자로 보이는 사람이 나타났습니다</b>${MODE === 'cand' ? '<span class="ib" id="afold" style="margin-left:auto" title="접기">▴</span>' : ''}</div>
+    <div class="row" style="gap:10px;align-items:center">${thumb(44, 64, TARGET)}${thumb(44, 64, TARGET)}<div class="grow"><b class="num" style="font-size:22px;color:#FCA5A5">${A.score}%</b><div><b>CAM-${A.cam}</b> · ${CAM[A.cam][3]}</div><div class="cap num">${A.t}</div></div></div>
+    <div class="row" style="gap:6px"><button class="btn pri sm" style="flex:1" id="aok">${ICON.check}맞음</button><button class="btn sm" style="flex:1" id="ano">${ICON.x}아님</button><button class="btn sm" id="asee" title="지도에서 영상 보기">${ICON.eye}</button></div></div>` : '';
+  const on = (id, f) => { const e = document.getElementById(id); if (e) e.onclick = f; };
+  on('aok', () => acceptSighting(S.alerts[0], 'alert'));
+  on('ano', () => { const a = S.alerts.shift(); S.unread = Math.max(0, S.unread - 1); Store.set(S); toast(`CAM-${a.cam} 알림을 오탐으로 기록했습니다.`, 'info'); renderAll(); });
+  on('asee', () => { focusCam(A.cam); openCard({ type: 'cam', cam: A.cam }); });
+  on('afold', () => { alertOpen = false; renderRight(); });
+  // 알림 카드가 있으면 영상 카드가 겹치지 않게 지도 오른쪽 여백을 고려
+}
+
+/* ================= 하단 타임라인 띠 ================= */
+function renderStrip() {
+  const sc = scenes(), R = S.report;
+  const items = [{ kind: 'r', t: R.t + ':00' }, ...sc, ...S.absent.filter(a => a.cam && !a.label).map(a => ({ ...a, kind: 'a' }))].sort(byTime);
+  let h = '', prev = null;
+  items.forEach((it, i) => {
+    if (i) h += `<span class="sl ${it.kind === 't' || prev?.kind === 't' ? 'd' : prev?.kind === 'r' || it.kind === 'a' || prev?.kind === 'a' ? 'g' : ''}"></span>`;
+    if (it.kind === 'r') h += `<div class="si" style="cursor:default"><div style="width:30px;height:42px;border:1.5px dashed #EF4444;border-radius:6px;display:flex;align-items:center;justify-content:center">${PIN}</div><div><b style="font-size:12px">신고 지점</b><div class="cap num">${R.t} ±${R.tol}분</div></div></div>`;
+    else if (it.kind === 'a') h += `<div class="si" style="cursor:default;opacity:.7"><span class="n" style="background:var(--card3);color:var(--mute)">✕</span><div><b style="font-size:12px" class="sub">CAM-${it.cam}</b><div class="cap">부재</div></div></div>`;
+    else h += `<div class="si ${card && card.type === 'scene' && card.key === it.key ? 'on' : ''}" data-sk="${it.key}">${thumb(30, 42, TARGET)}<div><div class="row" style="gap:5px;align-items:center"><span class="n ${it.kind === 't' ? 't' : ''}">${it.n}</span><b style="font-size:12px">CAM-${it.cam}</b></div><div class="cap num">${it.t}</div></div></div>`;
+    prev = it;
+  });
+  if (MODE === 'cand' && !S.done[keyOf()]) h += `<span class="sl d"></span><div class="si" style="cursor:default"><div style="width:30px;height:42px;border:1.5px dashed var(--chg);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--chg);font-weight:800">?</div><div><b style="font-size:12px;color:var(--chg)">${dir === 'next' ? '다음' : '이전'} 장면</b><div class="cap">후보 확인 중</div></div></div>`;
+  document.getElementById('strip').innerHTML = `<span class="cap" style="flex:none;margin-right:14px;line-height:1.4">동선<br>타임라인</span>${h}<span class="grow"></span><span class="cap" style="flex:none;margin-left:14px;text-align:right;line-height:1.5">확정 ${S.confirmed.length} · 임시 ${S.temp.length} · 부재 ${S.absent.length}<br>장면을 누르면 지도 위에 영상</span>`;
+  document.querySelectorAll('#strip [data-sk]').forEach(e => e.onclick = () => { focusCam(e.dataset.sk.slice(0, 2)); openCard({ type: 'scene', key: e.dataset.sk }); });
+}
+
+/* ================= 레이어 ================= */
+function renderLayers() {
+  const L = [['danger', '위험지역'], ['route', '동선'], ...(MODE === 'cand' ? [['cand', '후보']] : []), ...(MODE === 'search' ? [['range', '범위']] : []), ['names', '카메라 이름']];
+  document.getElementById('layers').innerHTML = L.map(([k, l]) => `<span class="lay ${layers[k] ? 'on' : ''}" data-l="${k}">${l}</span>`).join('');
+  document.querySelectorAll('.lay').forEach(e => e.onclick = () => { layers[e.dataset.l] = !layers[e.dataset.l]; renderLayers(); renderMap(); renderCard(); });
+}
+
+/* ================= 동작 ================= */
+function confirmCand(c) {
+  const k = keyOf();
+  S.confirmed.push({ cam: c.cam, t: c.t, score: c.score }); S.temp = S.temp.filter(x => x.cam !== c.cam); S.done[k] = true; Store.set(S);
+  toast(`CAM-${c.cam} ${c.t} 확정 — 이 장면을 새 기준점으로 다시 검색합니다.`);
+  card = null; sel = 0; busy('새 기준점으로 앞뒤 구간을 다시 검색하는 중…', () => { fitCands(); renderAll(); });
+}
+function markAbsent() {
+  const b = baseScene(), k = keyOf(), cams = [...new Set(allCands().map(c => c.cam))];
+  S.absent.push({ cam: cams[0] || b.cam, t: b.t, label: `${bLabel(b)} ${b.report ? '기준' : dir === 'next' ? '이후' : '이전'} 구간` });
+  S.done[k] = true; Store.set(S); card = null;
+  toast(`${bLabel(b)} ${b.report ? '기준' : dir === 'next' ? '이후' : '이전'} 구간을 부재 정보로 기록했습니다.`, 'info'); renderAll();
+}
+function acceptSighting(a, from) {
+  prevZones = rangeModel(elapsed()).zones.map(z => z.n);
+  if (from === 'alert') S.alerts.shift(); else S.pending = S.pending.filter(p => p !== a);
+  S.confirmed.push({ cam: a.cam, t: a.t, score: a.score });
+  const nowSec = Math.max(toSec(S.now), toSec(a.t) + 180); S.now = hhmm(nowSec);
+  S.unread = Math.max(0, S.unread - 1); Store.set(S); viewMin = null; card = null;
+  toast('확정 장면이 추가되어 수색 범위와 우선 구역을 다시 계산했습니다.', 'ok', 3200);
+  if (MODE !== 'search') MODE = 'search';
+  focusCam(a.cam, 900); renderAll();
+}
+function busy(msg, then) { document.getElementById('ws').insertAdjacentHTML('beforeend', `<div class="busy" id="busy"><span class="spin"></span>${msg}</div>`); setTimeout(() => { document.getElementById('busy')?.remove(); then(); }, 750); }
+
+/* ================= 사건 종결 모달 ================= */
+function openClose() {
+  const L = confirmedSorted(), end = L[L.length - 1] || reportScene(S);
+  document.body.insertAdjacentHTML('beforeend', `<div class="ovl" id="ovl"><div class="modal">
+    <div class="mh"><h3 style="font-size:17px">사건 종결</h3><span class="cap">${S.case.no} · ${S.case.type}</span><span class="ib" style="margin-left:auto" data-x>${ICON.x.replace('<svg', '<svg width="14" height="14"')}</span></div>
+    <div class="mb">
+      <div class="res"><div class="on" data-r="found">발견</div><div data-r="lost">미발견 (수색 중단)</div></div>
+      <div id="found" class="row" style="gap:10px"><div class="field grow" style="margin:0"><label>발견 시각</label><input class="inp num" type="time" value="${S.now}"></div><div class="field grow" style="margin:0"><label>발견 장소</label><input class="inp" value="${CAM[end.cam][3]} 인근"></div></div>
+      <div id="lost" style="display:none" class="msg info">${ICON.info.replace('<svg', '<svg class="ico"')}미발견으로 종결하면 수색 데이터는 보관 기간 동안 유지됩니다. 보관 기간은 아직 정하지 않았습니다.</div>
+      <div class="cap">최종 동선 (자동 첨부) · ${L.map(c => `${c.t.slice(0, 5)} CAM-${c.cam}`).join(' → ') || '확정 장면 없음'}</div>
+      <div class="field" style="margin:0"><label>메모</label><textarea class="inp ta" style="resize:none">보호자 인계 완료.</textarea></div>
+    </div>
+    <div class="mf"><span class="btn" data-x>취소</span><button class="btn pri" id="save">${ICON.check}종결 기록 저장</button></div></div></div>`);
+  const ovl = document.getElementById('ovl'); let res = 'found';
+  ovl.querySelectorAll('[data-x]').forEach(b => b.onclick = () => ovl.remove());
+  ovl.querySelectorAll('[data-r]').forEach(d => d.onclick = () => { res = d.dataset.r; ovl.querySelectorAll('[data-r]').forEach(x => x.classList.toggle('on', x === d)); document.getElementById('found').style.display = res === 'found' ? '' : 'none'; document.getElementById('lost').style.display = res === 'lost' ? '' : 'none'; });
+  document.getElementById('save').onclick = () => { S.closed = { result: res, at: S.now }; S.alerts = []; S.pending = []; S.unread = 0; Store.set(S); ovl.remove(); toast(res === 'found' ? '사건을 발견으로 종결했습니다.' : '사건을 미발견으로 종결했습니다.', 'ok'); renderAll(); };
+}
+
+/* ================= 그리기 ================= */
+function renderAll() {
+  S = Store.get();
+  shell('ws', caseTop(S, { delay: '1.2' })); setUnread(S.unread);
+  renderModebar(); renderLeft(); renderRight(); renderLayers(); renderMap(); renderStrip(); renderCard();
+}
+layers.danger = MODE !== 'cand';
+if (MODE === 'cand') fitCands();
+renderAll();
+window.addEventListener('resize', () => setTimeout(positionCard, 50));
+/* 목록·지도 마커·시간축 점 중 하나에 마우스를 올리면 같은 번호를 모두 강조 */
+document.addEventListener('mouseover', (e) => {
+  const t = e.target.closest('[data-ci],[data-cand]'), i = t ? (t.dataset.ci ?? t.dataset.cand) : null;
+  if (i === hlI) return; hlI = i;
+  document.querySelectorAll('.hl').forEach(x => x.classList.remove('hl'));
+  if (i != null) document.querySelectorAll(`[data-ci="${i}"],[data-cand="${i}"]`).forEach(x => x.classList.add('hl'));
+});
+</script></body></html>

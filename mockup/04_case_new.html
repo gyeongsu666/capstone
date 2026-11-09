@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><title>B-4 사건 등록 및 대상 선택 — ReFind</title>
+<link rel="stylesheet" href="refind.css?v=20261109"><script src="shell.js?v=20261109"></script><script src="interact.js?v=20261109"></script>
+<style>
+  .stepper{display:flex;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 18px}
+  .st{display:flex;align-items:center;gap:10px;color:var(--mute);font-weight:600;cursor:pointer}
+  .st i{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--line2);display:flex;align-items:center;justify-content:center;font-style:normal;font-size:12px}
+  .st.done{color:var(--sub)} .st.done i{background:var(--accd);border-color:var(--accd);color:#fff}
+  .st.on{color:var(--txt)} .st.on i{border-color:var(--acc);color:var(--acc);box-shadow:0 0 0 4px var(--accbg)}
+  .st small{display:block;font-weight:400;font-size:11px;color:var(--mute)}
+  .stline{flex:1;height:1.5px;background:var(--line2);margin:0 16px}
+  .stline.done{background:var(--accd)}
+  .vid{border-radius:9px;overflow:hidden;border:1px solid var(--line);background:#1B2420;position:relative}
+  .trk{display:flex;gap:8px}
+  .typ{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .typ div{border:1px solid var(--line2);border-radius:8px;padding:10px;text-align:center;color:var(--sub);font-weight:600;cursor:pointer}
+  .typ div.on{border-color:var(--acc);background:var(--accbg);color:var(--txt)}
+  .typ small{display:block;font-weight:400;font-size:10.5px;color:var(--mute);margin-top:2px}
+  .upl{border:1.5px dashed var(--line2);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--sub);background:#16201B;cursor:pointer}
+  .upl.drag{border-color:var(--acc);background:var(--accbg)}
+  .footer{display:flex;gap:8px;align-items:center}
+  input.inp,textarea.inp,select.inp{font:inherit;width:100%;outline:none}
+  input.inp:focus,textarea.inp:focus,select.inp:focus{border-color:var(--acc)}
+  input[type=datetime-local],select{color-scheme:dark}
+  .hit{position:absolute;cursor:pointer;border-radius:3px}
+  .hit:hover{background:rgba(233,212,107,.12)}
+  .tab{text-decoration:none}
+  #pinmap svg{cursor:crosshair}
+  .photo{width:240px;height:320px;border-radius:7px;overflow:hidden;background:#24322B;position:relative}
+  .photo img{width:100%;height:100%;object-fit:cover}
+</style></head>
+<body><aside class="side"></aside>
+<main><header class="top"></header>
+<section class="content">
+  <div class="ptitle"><div><h1>새 사건 등록</h1><p>사건 정보를 입력하고, 찾을 사람을 사진 또는 영상 속 인물로 지정합니다.</p></div>
+    <div class="act"><span class="cap" id="saved"></span></div></div>
+  <div class="stepper" id="stepper"></div>
+  <div class="row grow" id="body"></div>
+  <div class="footer" id="footer"></div>
+</section></main>
+<script>
+shell('case', { title: '새 사건 등록', meta: 'RF-1108-04 (등록 예정)', clock: '14:31', unread: 0 });
+setUnread(0);
+let step = +(Q.get('step') || 1), mode = Q.get('mode') || 'photo';
+const D = JSON.parse(sessionStorage.getItem('refind-draft') || 'null') || { type: '아동', name: '', age: '7', memo: '빨간 점퍼, 청바지, 노란 운동화, 키 약 120cm', time: '2026-11-08T14:30', cam: '07', person: 'P-23', photo: null, acc: '근처', tol: 10 };
+if (!D.acc) { D.acc = '근처'; D.tol = 10; }
+const isImg = () => D.photo && D.photo !== 'sample';
+const nearCams = () => Object.keys(CAM).sort((a, b) => Math.hypot(CAM[a][0] - CAM[D.cam][0], CAM[a][1] - CAM[D.cam][1]) - Math.hypot(CAM[b][0] - CAM[D.cam][0], CAM[b][1] - CAM[D.cam][1])).slice(0, 3);
+if (!D.vcam) D.vcam = D.cam;
+const placeTxt = () => D.acc === '모름' ? '장소 모름' : `${CAM[D.cam][3]}${D.acc === '근처' ? ' 근처' : ''}`;
+const saveDraft = () => { sessionStorage.setItem('refind-draft', JSON.stringify(D)); document.getElementById('saved').textContent = '임시 저장됨 ' + new Date().toTimeString().slice(0, 5); };
+const PEOPLE = { 'P-21': { x: 230, y: 300, s: 1.25, top: '#4E5C6B', bottom: '#2E3640', t: '14:30:05–14:30:22', inn: '서', out: '남' },
+  'P-23': { x: 350, y: 318, s: 1.05, top: TARGET[0], bottom: TARGET[1], t: '14:30:12–14:30:41', inn: '남 (도서관 방향)', out: '동 (인문관 방향)', child: true },
+  'P-24': { x: 500, y: 270, s: .85, top: '#6B6F5A', bottom: '#3A3A33', t: '14:29:58–14:30:30', inn: '북', out: '서' } };
+const lookOf = (id) => { const p = PEOPLE[id]; return [p.top, p.bottom, p.child ? { child: true, shoe: '#D3B23F' } : {}]; };
+
+function stepper() {
+  const S2 = [['사건 정보', '유형 · 보호자 신고 내용'], ['대상 선택', '실종자 사진 (기본)'], ['확인', '검색 조건 확인 후 시작']];
+  document.getElementById('stepper').innerHTML = S2.map((s, i) => { const n = i + 1, c = n < step ? 'done' : n === step ? 'on' : '';
+    return `${i ? `<span class="stline ${n <= step ? 'done' : ''}"></span>` : ''}<span class="st ${c}" data-s="${n}"><i>${n < step ? '✓' : n}</i><span>${s[0]}<small>${s[1]}</small></span></span>`; }).join('');
+  document.querySelectorAll('.st').forEach(e => e.onclick = () => { const n = +e.dataset.s; if (n < step || valid(step)) go(n); });
+}
+function valid(s) {
+  if (s === 1 && !D.time) { toast('마지막 목격 시각(신고 내용)을 입력하세요.', 'err'); return false; }
+  if (s === 1 && D.acc !== '모름' && !D.cam) { toast('지도에서 신고 장소를 지정하세요.', 'err'); return false; }
+  if (s === 2 && mode === 'photo' && !D.photo) { toast('전신 사진을 올리거나 예시 사진으로 진행하세요.', 'err'); return false; }
+  return true;
+}
+function go(n) { step = n; history.replaceState(null, '', `?step=${n}&mode=${mode}`); render(); }
+const summary = () => `<div class="card pad">
+  <div class="ch"><h3>사건 정보</h3><span class="r" style="color:var(--acc);cursor:pointer" onclick="go(1)">수정</span></div>
+  <dl class="kv"><dt>실종자 유형</dt><dd>${D.type}${D.name ? ' · ' + D.name : ''}${D.age ? ' · ' + D.age + '세' : ''}</dd><dt>신고 내용</dt><dd class="num">${D.time.replace('T', ' ').slice(5).replace('-', '.')} ±${D.tol}분 · ${placeTxt()} <span class="cap">(영상 아님)</span></dd><dt>특징 메모</dt><dd>${D.memo || '—'}</dd></dl></div>`;
+const camView = { x: null, y: 0, w: 1200 };   // 카메라 지도 보기 상태 (다시 그려도 유지)
+const camMapSvg = () => {
+  const near = nearCams();
+  const rings = near.map(id => `<circle cx="${CAM[id][0]}" cy="${CAM[id][1]}" r="20" fill="#E9D46B" fill-opacity=".12" stroke="#E9D46B" stroke-width="2"/>`).join('');
+  const opt = {}; near.forEach(id => opt[id] = { label: true, name: true, color: id === D.vcam ? '#89AD99' : '#E9D46B', sel: id === D.vcam });
+  if (!near.includes(D.vcam)) opt[D.vcam] = { label: true, name: true, sel: true };
+  return mapSVG(rings + pinSvg(), { camLabels: false, camOpt: opt });
+};
+const pinSvg = () => { if (D.acc === '모름') return ''; const [x, y] = CAM[D.cam]; return `<circle cx="${x}" cy="${y}" r="40" fill="url(#pulse)"/><path d="M${x} ${y}c0-14-10-20-10-28a10 10 0 0 1 20 0c0 8-10 14-10 28z" fill="#EF4444" transform="translate(0 -6)"/>
+  ${D.acc === '근처' ? `<circle cx="${x}" cy="${y}" r="70" fill="#EF4444" fill-opacity=".06" stroke="#EF4444" stroke-opacity=".5" stroke-dasharray="6 5"/>` : ''}
+  <rect x="${x + 14}" y="${y - 50}" width="${placeTxt().length * 13 + 120}" height="26" rx="5" fill="#2A1D1D" stroke="#EF4444"/><text x="${x + 24}" y="${y - 33}" font-size="12" fill="#FCA5A5" font-weight="700">신고 지점 · ${placeTxt()}</text>`; };
+
+function render() {
+  stepper();
+  const body = document.getElementById('body'), foot = document.getElementById('footer');
+  if (step === 1) {
+    body.innerHTML = `<div class="card pad grow" style="max-width:560px">
+      <div class="field"><label>실종자 유형 <i>*</i></label><div class="typ">${['아동', '치매환자', '장애인', '기타'].map(t => `<div class="${D.type === t ? 'on' : ''}" data-t="${t}">${t}<small>유형별 보행 속도</small></div>`).join('')}</div>
+        <span class="msg info">${ICON.info.replace('<svg', '<svg class="ico"')}유형별 보행 속도는 이동 가능 범위 계산에 쓰입니다. (속도 값은 시험 후 확정)</span></div>
+      <div class="row" style="gap:10px"><div class="field grow"><label>이름 (선택)</label><input class="inp" id="f-name" placeholder="입력하지 않아도 됩니다" value="${D.name}"></div><div class="field" style="width:140px"><label>나이 (선택)</label><input class="inp num" id="f-age" value="${D.age}"></div></div>
+      <div class="field"><label>특징 메모</label><textarea class="inp ta" id="f-memo" style="resize:none">${D.memo}</textarea></div>
+      <div class="msg info" style="margin:-2px 0 10px">${ICON.info.replace('<svg', '<svg class="ico"')}아래 시각·장소는 CCTV가 아니라 보호자 신고 내용입니다. 시스템은 이 지점에서 걸어갈 수 있는 카메라부터 자동으로 찾습니다.</div>
+      <div class="row" style="gap:10px"><div class="field grow"><label>마지막 목격 시각 (보호자 신고) <i>*</i></label><input class="inp num" type="datetime-local" id="f-time" value="${D.time}"></div>
+        <div class="field" style="width:130px"><label>시각 오차</label><select class="inp" id="f-tol">${[5, 10, 20, 30].map(m => `<option value="${m}" ${+D.tol === m ? 'selected' : ''}>±${m}분</option>`).join('')}</select></div></div>
+      <div class="field"><label>마지막 목격 장소 (보호자 신고) <i>*</i></label><div class="seg" id="f-acc">${['정확함', '근처', '모름'].map(a => `<span class="${D.acc === a ? 'on' : ''}">${a}</span>`).join('')}</div>
+        <div class="inp" style="margin-top:6px">${ICON.pin.replace('<svg', '<svg class="ico" style="color:#F87171"')}<span id="f-place">${D.acc === '모름' ? '장소 모름 · 시간 조건으로 전체 카메라 검색' : placeTxt() + ' (CAM-' + D.cam + ' 인근)'}</span><span class="r">${D.acc === '모름' ? '' : '지도를 클릭해 변경'}</span></div></div>
+    </div>
+    <div class="mapbox grow" id="pinmap">${mapSVG(pinSvg(), { camLabels: false, dimCams: true })}
+      <div class="toast" style="left:12px;top:12px">${ICON.pin.replace('<svg', '<svg style="color:#F87171"')}${D.acc === '모름' ? '장소를 모르면 시간 조건만으로 전체 카메라를 검색합니다.' : '지도를 클릭해 보호자가 말한 장소를 지정하세요.'}</div></div>`;
+    body.querySelectorAll('.typ div').forEach(d => d.onclick = () => { D.type = d.dataset.t; saveDraft(); render(); });
+    [['f-name', 'name'], ['f-age', 'age'], ['f-memo', 'memo'], ['f-time', 'time'], ['f-tol', 'tol']].forEach(([id, k]) => document.getElementById(id).oninput = (e) => { D[k] = e.target.value; saveDraft(); });
+    document.querySelectorAll('#f-acc span').forEach(sp => sp.onclick = () => { D.acc = sp.textContent; saveDraft(); render(); });
+    const svg = document.querySelector('#pinmap svg');
+    svg.onclick = (e) => { if (D.acc === '모름') return; const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+      let best = null, bd = 1e9; Object.entries(CAM).forEach(([id, c]) => { const d = Math.hypot(c[0] - p.x, c[1] - p.y); if (d < bd) { bd = d; best = id; } });
+      D.cam = best; D.vcam = best; saveDraft(); render(); toast(`신고 장소: ${CAM[best][3]}`, 'info', 1600); };
+    foot.innerHTML = `<a class="btn" href="01_cases.html">취소</a><span class="grow"></span><button class="btn pri" id="next">다음: 대상 선택 ${ICON.arrowR}</button>`;
+    document.getElementById('next').onclick = () => valid(1) && go(2);
+  }
+
+  if (step === 2) {
+    const tabs = `<div class="tabs" style="align-self:flex-start"><span class="tab ${mode === 'photo' ? 'on' : ''}" data-m="photo">사진 업로드 (기본)</span><span class="tab ${mode === 'video' ? 'on' : ''}" data-m="video">영상에서 직접 선택 (사진이 없을 때)</span></div>`;
+    let left;
+    if (mode === 'video') {
+      left = `<div class="card pad grow col" style="gap:12px">
+        <div class="row" style="gap:10px;align-items:center">${tabs}<span class="grow"></span>
+          <div class="inp num" style="width:200px">${ICON.clock.replace('<svg', '<svg class="ico"')}${D.time.slice(11)} ±${D.tol}분 구간</div></div>
+        <div class="row grow" style="gap:12px;min-height:0">
+          <div class="col" style="flex:1.5;min-width:0;gap:8px">
+            <div class="mapbox grow" id="cammap">${camMapSvg()}<div class="legend" style="left:8px;bottom:8px;font-size:10.5px;padding:7px 9px">
+              <div><span class="sw" style="background:#E9D46B;width:10px;height:10px;border-radius:50%"></span>추천 (신고 지점 근처)</div>
+              <div><span class="sw" style="background:#89AD99;width:10px;height:10px;border-radius:50%"></span>선택한 카메라</div></div></div>
+            <div class="cap">카메라를 눌러 영상을 엽니다 · 휠로 확대·축소, 드래그로 이동</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">${nearCams().map(id => `<span class="chip" data-vc="${id}" style="cursor:pointer;${id === D.vcam ? 'border-color:var(--acc);color:var(--txt)' : ''}">CAM-${id} · ${CAM[id][3]}</span>`).join('')}</div>
+          </div>
+          <div class="vid" style="flex:1;min-width:0;display:flex;flex-direction:column"><div class="grow" style="min-height:0;position:relative" id="vwrap">${videoSVG({ cam: `CAM-${D.vcam} ${CAM[D.vcam][3]}`, time: '2026-11-08 14:30:12',
+          people: Object.entries(PEOPLE).map(([id, p]) => ({ ...p, box: id === D.person ? '#E9D46B' : '#89AD99', lab: id + (id === D.person ? ' 선택됨' : ''), sel: id === D.person })) })}</div>${playerBar(36, [[30, 46]], '00:12 / 01:00:00')}</div>
+        </div>
+        <span class="msg info">${ICON.info.replace('<svg', '<svg class="ico"')}사진이 없을 때만 씁니다. 지도에서 신고 지점 근처 카메라를 골라 신고 시각 ±${D.tol}분 영상만 확인합니다. 찾을 사람의 박스를 클릭하면 그 장면이 첫 확정 장면이 됩니다.</span>
+      </div>`;
+    } else {
+      left = `<div class="card pad grow col" style="gap:12px">
+        <div class="row" style="gap:10px;align-items:center">${tabs}</div>
+        <div class="row grow" style="gap:14px">
+          <label class="upl grow" id="drop">${ICON.upload.replace('<svg', '<svg width="30" height="30" style="color:var(--acc)"')}<b style="color:var(--txt)">보호자에게 받은 전신 사진을 끌어다 놓거나 클릭</b><span class="cap">JPG, PNG · 사진은 이 브라우저에만 저장됩니다</span><input type="file" accept="image/*" id="f-photo" hidden><span class="btn sm" id="sample" style="margin-top:6px">예시 사진으로 진행 (시연용)</span></label>
+          <div class="col" style="width:240px"><div class="photo">${isImg() ? `<img src="${D.photo}">` : person(...TARGET)}<div class="tag" style="position:absolute;left:0;right:0;bottom:0;font-size:9.5px;color:var(--sub);background:rgba(15,22,18,.75);text-align:center;padding:2px 0">${isImg() ? '업로드한 사진' : D.photo ? '예시 사진 (시연용)' : '사진 미리보기'}</div></div>
+            <span class="msg info">${ICON.info.replace('<svg', '<svg class="ico"')}전신이 보이는 사진일수록 정확합니다. 얼굴이 아니라 옷차림 등 외형으로 비교합니다.</span></div>
+        </div></div>`;
+    }
+    const look = mode === 'photo' ? TARGET : lookOf(D.person), P = PEOPLE[D.person];
+    body.innerHTML = left + `<div class="panel">
+      <div class="card pad"><div class="ch"><h3>선택한 대상</h3><span class="bdg ${mode === 'photo' && !D.photo ? 'gray' : 'ok'}">${mode === 'photo' && !D.photo ? '사진 대기' : '질의 생성됨'}</span></div>
+        <div class="row" style="gap:12px">${mode === 'photo' && isImg() ? `<div class="thumb" style="width:92px;height:138px"><img src="${D.photo}" style="width:100%;height:100%;object-fit:cover"></div>` : thumb(92, 138, look, mode === 'photo' ? '사진' : D.person)}
+          <dl class="kv" style="grid-template-columns:70px 1fr;align-content:start">${mode === 'photo' ? '<dt>입력</dt><dd>보호자 제공 사진</dd><dt>특징</dt><dd>사진 1장 → 특징 벡터 1개</dd>' :
+            `<dt>카메라</dt><dd>CAM-${D.vcam}</dd><dt>구간</dt><dd class="num">${P.t}</dd><dt>진입</dt><dd>${P.inn}</dd><dt>이탈</dt><dd>${P.out}</dd>`}</dl></div>
+        ${mode === 'video' ? `<div class="cap" style="margin:12px 0 6px">트랙렛 대표 장면 4장 · 특징 벡터 1개로 합쳐 검색</div><div class="trk">${[0, 1, 2, 3].map(() => thumb(76, 104, look)).join('')}</div>` : ''}
+      </div>${summary()}</div>`;
+    body.querySelectorAll('.tab').forEach(t => t.onclick = () => { mode = t.dataset.m; go(2); });
+    if (mode === 'video') {
+      const pickCam = (id) => { if (id === D.vcam) return; D.vcam = id; saveDraft(); render();
+        toast(nearCams().includes(id) ? `CAM-${id} · ${CAM[id][3]} 영상을 열었습니다.` : `CAM-${id}는 신고 지점에서 먼 카메라입니다. 영상은 열었습니다.`, nearCams().includes(id) ? 'info' : 'warn', 1800); };
+      document.querySelectorAll('[data-vc]').forEach(c => c.onclick = () => pickCam(c.dataset.vc));
+      const msvg = document.querySelector('#cammap svg');
+      if (camView.x === null) { camView.w = 640; camView.x = CAM[D.cam][0] - 320; camView.y = CAM[D.cam][1] - 640 * 800 / 1200 / 2; }   // 처음엔 신고 지점 중심으로 확대
+      enablePanZoom(document.getElementById('cammap'), camView);
+      msvg.onclick = (e) => { if (camView.moved) { camView.moved = false; return; }   // 드래그 직후 클릭은 무시
+        const m = msvg.getScreenCTM(), pt = msvg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const q = pt.matrixTransform(m.inverse());
+        let best = null, bd = 1e9; Object.entries(CAM).forEach(([id, c]) => { const d = Math.hypot(c[0] - q.x, c[1] - q.y); if (d < bd) { bd = d; best = id; } });
+        if (bd * m.a < 30) pickCam(best); };
+      // 박스 클릭 영역: SVG 좌표 → 화면 좌표
+      const svg = document.querySelector('#vwrap svg'), wrap = document.getElementById('vwrap');
+      const place = () => { wrap.querySelectorAll('.hit').forEach(h => h.remove()); const m = svg.getScreenCTM(), wr = wrap.getBoundingClientRect();
+        Object.entries(PEOPLE).forEach(([id, p]) => { const tl = svg.createSVGPoint(); tl.x = p.x - 20 * p.s; tl.y = p.y - 70 * p.s; const br = svg.createSVGPoint(); br.x = p.x + 20 * p.s; br.y = p.y + 4 * p.s;
+          const a = tl.matrixTransform(m), b = br.matrixTransform(m), h = document.createElement('div'); h.className = 'hit'; h.title = id + ' 선택';
+          const k = window.__scale || 1; h.style.cssText = `left:${(a.x - wr.left) / k}px;top:${(a.y - wr.top) / k}px;width:${(b.x - a.x) / k}px;height:${(b.y - a.y) / k}px`;
+          h.onclick = () => { D.person = id; saveDraft(); render(); toast(`${id}를 찾을 대상으로 선택했습니다.`, 'info', 1600); }; wrap.appendChild(h); }); };
+      setTimeout(place, 0); window.onresize = () => setTimeout(place, 30);
+    } else {
+      const inp = document.getElementById('f-photo'), drop = document.getElementById('drop');
+      const load = (file) => { if (!file || !file.type.startsWith('image/')) { toast('이미지 파일만 올릴 수 있습니다.', 'err'); return; }
+        const r = new FileReader(); r.onload = () => { D.photo = r.result; try { saveDraft(); } catch (e) { D.photo = null; toast('사진이 너무 커서 저장하지 못했습니다.', 'err'); } render(); toast('사진을 올렸습니다. 질의를 만들었습니다.'); }; r.readAsDataURL(file); };
+      inp.onchange = () => load(inp.files[0]);
+      document.getElementById('sample').onclick = (e) => { e.preventDefault(); e.stopPropagation(); D.photo = 'sample'; saveDraft(); render(); toast('예시 사진으로 질의를 만들었습니다.'); };
+      drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('drag'); }; drop.ondragleave = () => drop.classList.remove('drag');
+      drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('drag'); load(e.dataTransfer.files[0]); };
+    }
+    foot.innerHTML = `<button class="btn" id="prev">${ICON.arrowL}이전</button><span class="grow"></span><button class="btn pri" id="next">다음: 확인 ${ICON.arrowR}</button>`;
+    document.getElementById('prev').onclick = () => go(1); document.getElementById('next').onclick = () => valid(2) && go(3);
+  }
+
+  if (step === 3) {
+    const look = mode === 'photo' ? TARGET : lookOf(D.person);
+    body.innerHTML = `<div class="col" style="width:460px;flex:none">${summary()}
+      <div class="card pad"><div class="ch"><h3>찾을 대상</h3><span class="bdg ok">${mode === 'photo' ? '사진' : '영상 속 인물 ' + D.person}</span><span class="r" style="color:var(--acc);cursor:pointer" onclick="go(2)">수정</span></div>
+        <div class="row" style="gap:10px">${mode === 'photo' && isImg() ? `<div class="thumb" style="width:84px;height:124px"><img src="${D.photo}" style="width:100%;height:100%;object-fit:cover"></div>` : thumb(84, 124, look, mode === 'photo' ? '사진' : D.person)}${mode === 'video' ? `<div class="trk">${[0, 1, 2].map(() => thumb(70, 100, look)).join('')}</div>` : ''}</div></div>
+      <div class="card pad"><div class="ch"><h3>검색 조건</h3></div>
+        <dl class="kv"><dt>검색 출발점</dt><dd>신고 지점 · ${placeTxt()} · ${D.time.slice(11)} ±${D.tol}분 <span class="cap">(영상 아님)</span></dd><dt>첫 검색</dt><dd>${mode === 'video' ? `담당자가 고른 CAM-${D.vcam} 장면을 첫 확정 장면으로 두고 앞뒤 검색` : D.acc === '모름' ? '시간 조건만으로 전체 카메라 비교' : '신고 지점에서 도보로 갈 수 있는 카메라를 시스템이 자동 비교'}</dd><dt>유사도 기준</dt><dd>70% <span class="cap">(후보 선택 화면에서 조정)</span></dd><dt>검색 대상 영상</dt><dd>분석 완료 6개 <span class="cap">· 미완료 6개 제외</span></dd></dl></div></div>
+    <div class="mapbox grow">${mapSVG((D.acc === '모름' ? '' : `<circle cx="${CAM[D.cam][0]}" cy="${CAM[D.cam][1]}" r="150" fill="#89AD99" fill-opacity=".07" stroke="#89AD99" stroke-opacity=".35" stroke-dasharray="6 6"/>`) + pinSvg(), { camLabels: false, camOpt: { [D.cam]: { sel: true } } })}
+      <div class="legend" style="left:12px;bottom:28px"><div><span class="sw" style="border:1px dashed #89AD99"></span>첫 검색의 도보 이동 가능 범위 (예시)</div></div></div>`;
+    foot.innerHTML = `<button class="btn" id="prev">${ICON.arrowL}이전</button><span class="grow"></span><span class="cap" style="margin-right:8px">검색은 영상을 다시 처리하지 않고 저장된 분석 결과만 조회합니다.</span><button class="btn pri lg" id="go">${ICON.search}검색 시작</button>`;
+    document.getElementById('prev').onclick = () => go(2);
+    document.getElementById('go').onclick = () => {
+      const s = FRESH_CASE();
+      s.case = { no: 'RF-1108-04', type: D.type, last: D.time.slice(11, 16), place: CAM[D.cam][3], memo: D.memo };
+      s.report = { cam: D.cam, t: D.time.slice(11, 16), acc: D.acc, tol: +D.tol };
+      // 사진 방식: 확정 장면 없이 신고 지점에서 자동 검색 시작 / 영상 직접 선택: 담당자가 고른 장면이 첫 확정 장면
+      s.confirmed = mode === 'video' ? [{ cam: D.vcam, t: D.time.slice(11, 16) + ':12', score: null, manual: true }] : [];
+      if (mode === 'video') s.done = { report: true };
+      Store.set(s);
+      const b = document.getElementById('go'); b.innerHTML = '<span class="spin" style="width:16px;height:16px;border:2.5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;display:inline-block;animation:sp .8s linear infinite"></span> 검색 중…';
+      document.head.insertAdjacentHTML('beforeend', '<style>@keyframes sp{to{transform:rotate(360deg)}}</style>');
+      setTimeout(() => location.href = '05_workspace.html?mode=cand', 900);
+    };
+  }
+}
+render();
+</script></body></html>

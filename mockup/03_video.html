@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><title>영상 등록 — ReFind</title>
+<link rel="stylesheet" href="refind.css?v=20261109"><script src="shell.js?v=20261109"></script><script src="interact.js?v=20261109"></script>
+<style>
+  #ws{position:relative;flex:1;min-height:0;overflow:hidden}
+  #map{position:absolute;inset:0;border-radius:0;border:0}
+  .fp{position:absolute;z-index:5;background:rgba(20,29,25,.94);backdrop-filter:blur(6px);border:1px solid var(--line2);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.38)}
+  #left{left:14px;top:14px;bottom:150px;width:300px;display:flex;flex-direction:column;overflow:hidden}
+  #left .lh{padding:14px 14px 10px;border-bottom:1px solid var(--line)}
+  #left .lb{flex:1;min-height:0;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+  .stat{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .stat div{background:var(--card2);border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+  .stat b{display:block;font-size:19px}
+  .stat span{font-size:11px;color:var(--sub);display:flex;align-items:center;gap:5px}
+  .qrow{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card2);cursor:pointer;font-size:12px}
+  .qrow:hover{border-color:var(--line2)}
+  #strip{left:14px;right:14px;bottom:14px;height:122px;padding:10px 14px;display:flex;flex-direction:column;gap:6px}
+  .cov{display:grid;grid-template-columns:140px 1fr;row-gap:5px;align-items:center;font-size:11.5px;overflow-y:auto;flex:1;min-height:0}
+  .cov .lane{position:relative;height:12px;background:#18221D;border-radius:3px}
+  .cov .seg{position:absolute;top:0;bottom:0;border-radius:3px}
+  .cov .nm{cursor:pointer;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cov .nm.on{color:var(--txt);font-weight:700}
+  .axis{display:flex;justify-content:space-between;font-size:10px;color:var(--mute);padding-left:140px}
+  .s-done{background:#5B7C69}.s-run{background:repeating-linear-gradient(45deg,#89AD99 0 5px,#5B7C69 5px 10px)}
+  .s-wait{background:#3A4B41}.s-fail{background:transparent;border:1.5px solid #EF4444}
+  .s-ovl{background:rgba(245,158,11,.35);border:1.5px solid #F59E0B}
+  #card{position:absolute;z-index:8;width:420px;display:none}
+  #card.show{display:block}
+  #card .arrow{position:absolute;width:12px;height:12px;background:rgba(20,29,25,.97);border-left:1px solid var(--line2);border-bottom:1px solid var(--line2)}
+  .vc{background:rgba(20,29,25,.97);border:1px solid var(--line2);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.5);overflow:hidden}
+  .vc .vh{display:flex;align-items:center;gap:8px;padding:11px 12px;border-bottom:1px solid var(--line)}
+  .vc .vb{padding:12px;display:flex;flex-direction:column;gap:10px;max-height:560px;overflow-y:auto}
+  .vrow{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card2);font-size:12px}
+  .vrow.new{animation:hl 2s ease-out}
+  @keyframes hl{from{background:rgba(233,212,107,.18)}}
+  .drop{border:1.5px dashed var(--line2);border-radius:9px;padding:12px;text-align:center;color:var(--sub);background:#16201B;cursor:pointer;display:block;font-size:12px}
+  .drop.drag{border-color:var(--acc);background:var(--accbg)}
+  input.inp{font:inherit;width:100%;outline:none;color-scheme:dark}
+  input.inp:focus{border-color:var(--acc)}
+  .ib{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--sub);flex:none}
+  .ib:hover{background:var(--card3);color:var(--txt)}
+  .hint{left:50%;top:14px;transform:translateX(-50%);padding:8px 14px;border-radius:20px;font-size:12.5px;display:flex;align-items:center;gap:8px}
+</style></head>
+<body><aside class="side"></aside>
+<main><header class="top"></header>
+<section class="content" style="padding:0;gap:0">
+  <div id="ws">
+    <div class="mapbox" id="map"></div>
+    <div class="fp hint" id="hint"></div>
+    <div class="fp" id="left"></div>
+    <div id="card"></div>
+    <div class="fp" id="strip"></div>
+  </div>
+</section></main>
+<script>
+shell('video', { title: '영상 등록', meta: '지도에서 카메라를 눌러 녹화 영상을 넣습니다' });
+
+/* ---------- 영상 목록 상태 (시연용, 새로고침하면 처음으로) ---------- */
+const V = [
+  ['07', 14, 15, 'CAM07_1400.mp4', 'done', 100, 412], ['09', 14, 15, 'CAM09_1400.mp4', 'done', 100, 287], ['12', 13.5, 15, 'CAM12_1330.mp4', 'done', 100, 536],
+  ['15', 14, 15, 'CAM15_1400.mp4', 'run', 72, 198], ['16', 14, 15, 'CAM16_1400.mp4', 'run', 31, 41], ['10', 14, 15, 'CAM10_1400.mp4', 'fail', 38, 0],
+  ['17', 14.5, 16, 'CAM17_1430.mp4', 'wait', 0, 0], ['11', 14, 15.5, 'CAM11_1400.mp4', 'wait', 0, 0], ['13', 14, 15, 'CAM13_1400.mp4', 'done', 100, 233],
+  ['24', 14, 15, 'CAM24_1400.mp4', 'done', 100, 175], ['08', 14, 15, 'CAM08_1400.mp4', 'done', 100, 301],
+].map(([cam, a, b, f, st, p, n]) => ({ cam, a, b, f, st, p, n }));
+const ST = { done: ['ok', '완료', '#89AD99'], run: ['mid', '분석 중', '#F59E0B'], wait: ['gray', '대기', '#6E7F75'], fail: ['hi', '실패', '#EF4444'], none: ['gray', '영상 없음', '#3A4B41'] };
+const hm = (h) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round(h % 1 * 60)).padStart(2, '0')}`;
+const camState = (id) => { const vs = V.filter(v => v.cam === id); if (!vs.length) return 'none';
+  return vs.some(v => v.st === 'fail') ? 'fail' : vs.some(v => v.st === 'run') ? 'run' : vs.some(v => v.st === 'wait') ? 'wait' : 'done'; };
+let selCam = null, form = { time: '', file: null, errs: [], ovl: '' };
+const camView = { x: -200, y: -20, w: 1380 };
+
+/* ---------- 지도 ---------- */
+function marker(id) {
+  const [x, y] = CAM[id], st = camState(id), c = ST[st][2], vs = V.filter(v => v.cam === id), on = id === selCam, run = vs.find(v => v.st === 'run');
+  const r = 13, circ = 2 * Math.PI * r;
+  return `<g data-cam="${id}" style="cursor:pointer">
+    ${on ? `<circle cx="${x}" cy="${y}" r="24" fill="#89AD99" fill-opacity=".22"/>` : ''}
+    <circle cx="${x}" cy="${y}" r="${r}" fill="${st === 'none' ? '#16211C' : '#1A2520'}" stroke="${c}" stroke-width="${st === 'none' ? 2 : 3}" ${st === 'none' ? 'stroke-dasharray="4 3"' : ''}/>
+    ${run ? `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="#F59E0B" stroke-width="3" stroke-dasharray="${circ * run.p / 100} ${circ}" transform="rotate(-90 ${x} ${y})"/>` : ''}
+    ${st === 'none' ? `<text x="${x}" y="${y + 4.5}" text-anchor="middle" font-size="14" font-weight="700" fill="#6E7F75">+</text>`
+      : st === 'fail' ? `<text x="${x}" y="${y + 4.5}" text-anchor="middle" font-size="13" font-weight="800" fill="#EF4444">!</text>`
+      : `<text x="${x}" y="${y + 4}" text-anchor="middle" font-size="11" font-weight="800" fill="${c}">${vs.length}</text>`}
+    <text x="${x + 17}" y="${y - 10}" font-size="11" font-weight="${on ? 700 : 500}" fill="${on ? '#DEE7E0' : '#8FA197'}">CAM-${id}</text>
+  </g>`;
+}
+function renderMap() {
+  const map = document.getElementById('map');
+  map.innerHTML = mapSVG(`<g id="mk">${Object.keys(CAM).map(marker).join('')}</g>`, { cams: false, danger: false });
+  enablePanZoom(map, camView);
+  map.querySelector('.zoom').style.cssText = 'right:14px;bottom:150px;top:auto';
+  camView.onChange = positionCard;
+  const svg = map.querySelector('svg');
+  svg.onclick = (e) => {
+    if (camView.moved) { camView.moved = false; return; }
+    const g = e.target.closest('[data-cam]');
+    if (g) openCam(g.dataset.cam); else if (selCam) closeCard();
+  };
+}
+
+/* ---------- 카메라 카드 (지도 위) ---------- */
+function openCam(id) { if (selCam !== id) form = { time: '', file: null, errs: [], ovl: '' }; selCam = id; renderAll(); }
+function closeCard() { selCam = null; renderAll(); }
+function renderCard() {
+  const el = document.getElementById('card');
+  if (!selCam) { el.className = ''; el.innerHTML = ''; return; }
+  const id = selCam, vs = V.filter(v => v.cam === id), st = camState(id);
+  const rows = vs.length ? vs.map(v => `<div class="vrow ${v.isNew ? 'new' : ''}">
+      <div><b class="num">${hm(v.a)}–${hm(v.b)}</b> <span class="cap" style="margin-left:4px">${v.f}</span></div><span class="bdg ${ST[v.st][0]}">${ST[v.st][1]}</span>
+      ${v.st === 'wait' ? `<span class="cap">분석 순서 대기 중</span><span></span>` : `<div class="row" style="gap:8px;align-items:center"><div class="bar grow"><i style="width:${v.p}%;background:${ST[v.st][2]}"></i></div><span class="cap num" style="width:34px">${Math.floor(v.p)}%</span></div>
+      <span class="cap num">${v.st === 'done' ? `트랙렛 ${v.n}` : v.st === 'run' ? `약 ${Math.max(1, Math.round((100 - v.p) / 8))}분` : ''}</span>`}
+      ${v.st === 'fail' ? `<span class="cap" style="color:#F87171">코덱 미지원 (H.265 10bit)</span><button class="btn sm" data-retry="${V.indexOf(v)}">${ICON.refresh}재시도</button>` : ''}
+    </div>`).join('') : `<div class="cap" style="padding:6px 0">아직 등록된 영상이 없습니다.</div>`;
+  el.innerHTML = `<div class="arrow"></div><div class="vc">
+    <div class="vh"><span class="bdg ${ST[st][0]}">${ST[st][1]}</span><b>CAM-${id} · ${CAM[id][3]}</b><span class="ib" id="cx" style="margin-left:auto">${ICON.x.replace('<svg', '<svg width="14" height="14"')}</span></div>
+    <div class="vb">
+      <div class="cap">등록된 영상 ${vs.length}개 · 분석이 끝난 영상만 검색에 쓰입니다</div>
+      ${rows}
+      <div style="border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:8px">
+        <b style="font-size:13px">${ICON.plus.replace('<svg', '<svg width="13" height="13" style="vertical-align:-2px"')} 이 카메라에 영상 추가</b>
+        <div class="field" style="margin:0"><label>녹화 시작 일시 <i>*</i></label><input class="inp num ${form.errs.includes('time') ? 'err' : ''}" type="datetime-local" step="1" id="f-time" value="${form.time}"></div>
+        <label class="drop" id="drop">${ICON.upload.replace('<svg', '<svg width="20" height="20" style="color:var(--acc)"')}<div>${form.file ? `<b style="color:var(--txt)">${form.file.name}</b> · ${(form.file.size / 1048576).toFixed(1)} MB` : '<b style="color:var(--txt)">영상 파일을 끌어다 놓거나 클릭</b>'}</div><div class="cap">MP4, AVI, MKV, MOV · 시안이라 실제로 올리지는 않습니다</div><input type="file" id="f-file" hidden></label>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          ${form.errs.includes('time') ? `<span class="msg err">${ICON.warn.replace('<svg', '<svg class="ico"')}녹화 시작 시각을 입력해야 등록할 수 있습니다.</span>` : ''}
+          ${form.errs.includes('nofile') ? `<span class="msg err">${ICON.x.replace('<svg', '<svg class="ico"')}영상 파일을 선택하세요.</span>` : ''}
+          ${form.errs.includes('fmt') ? `<span class="msg err">${ICON.x.replace('<svg', '<svg class="ico"')}지원하지 않는 형식입니다 (.${form.file.name.split('.').pop()}).</span>` : ''}
+          ${form.ovl ? `<span class="msg warn">${ICON.warn.replace('<svg', '<svg class="ico"')}${form.ovl}</span>` : ''}
+        </div>
+        <button class="btn pri" id="f-go">${ICON.upload}등록 후 분석 시작</button>
+      </div>
+    </div></div>`;
+  el.className = 'show';
+  document.getElementById('cx').onclick = closeCard;
+  document.getElementById('f-time').oninput = (e) => { form.time = e.target.value; form.errs = form.errs.filter(x => x !== 'time'); };
+  const inp = document.getElementById('f-file'), drop = document.getElementById('drop');
+  const setFile = (f) => { if (!f) return; form.file = { name: f.name, size: f.size }; form.errs = form.errs.filter(x => x !== 'fmt' && x !== 'nofile'); renderCard(); };
+  inp.onchange = () => setFile(inp.files[0]);
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('drag'); }; drop.ondragleave = () => drop.classList.remove('drag');
+  drop.ondrop = (e) => { e.preventDefault(); setFile(e.dataTransfer.files[0]); };
+  document.getElementById('f-go').onclick = submit;
+  el.querySelectorAll('[data-retry]').forEach(b => b.onclick = () => { const v = V[+b.dataset.retry]; v.st = 'wait'; v.p = 0; toast(`CAM-${v.cam} 영상을 다시 분석 대기열에 넣었습니다.`, 'info'); renderAll(); });
+  positionCard();
+}
+function positionCard() {
+  const el = document.getElementById('card'); if (!selCam || !el.querySelector('.arrow')) return;
+  const ws = document.getElementById('ws'), svg = document.querySelector('#map svg'), k = window.__scale || 1;
+  const pt = svg.createSVGPoint(); pt.x = CAM[selCam][0]; pt.y = CAM[selCam][1]; const p = pt.matrixTransform(svg.getScreenCTM()), r = ws.getBoundingClientRect();
+  const x = (p.x - r.left) / k, y = (p.y - r.top) / k, W = ws.offsetWidth, H = ws.offsetHeight, cw = 420, ch = el.offsetHeight || 400;
+  const right = x + 28 + cw < W - 14, left = right ? x + 28 : x - 28 - cw;
+  const top = Math.min(Math.max(14, y - 100), H - 150 - ch);
+  el.style.left = Math.max(14, left) + 'px'; el.style.top = Math.max(14, top) + 'px';
+  const ar = el.querySelector('.arrow'); ar.style.top = Math.min(Math.max(14, y - Math.max(14, top) - 6), ch - 26) + 'px';
+  ar.style.left = right ? '-6px' : ''; ar.style.right = right ? '' : '-6px'; ar.style.transform = right ? 'rotate(45deg)' : 'rotate(-135deg)';
+}
+function submit() {
+  form.errs = []; form.ovl = '';
+  if (!form.time) form.errs.push('time');
+  if (!form.file) form.errs.push('nofile'); else if (!/\.(mp4|avi|mkv|mov)$/i.test(form.file.name)) form.errs.push('fmt');
+  if (form.errs.length) { renderCard(); toast('입력 내용을 확인하세요.', 'err'); return; }
+  const d = new Date(form.time), a = d.getHours() + d.getMinutes() / 60, b = Math.min(24, a + 1);
+  const clash = V.find(v => v.cam === selCam && a < v.b && b > v.a);
+  V.forEach(v => v.isNew = false);
+  V.push({ cam: selCam, a, b, f: form.file.name, st: 'wait', p: 0, n: 0, isNew: true });
+  form = { time: '', file: null, errs: [], ovl: clash ? `기존 영상과 ${hm(Math.max(a, clash.a))}~${hm(Math.min(b, clash.b))} 구간이 겹칩니다. 등록은 진행했습니다.` : '' };
+  toast(`CAM-${selCam}에 영상을 등록했습니다. 분석 대기열에 추가했습니다.`);
+  renderAll();
+}
+
+/* ---------- 왼쪽 요약 ---------- */
+function renderLeft() {
+  const c = (s) => V.filter(v => v.st === s).length, noVid = Object.keys(CAM).filter(id => camState(id) === 'none').length;
+  const q = V.filter(v => v.st === 'run' || v.st === 'wait' || v.st === 'fail');
+  document.getElementById('left').innerHTML = `<div class="lh"><b style="font-size:15px">영상 등록</b><div class="cap" style="margin-top:3px">카메라 ${Object.keys(CAM).length}대 · 영상 ${V.length}개</div></div>
+    <div class="lb">
+      <div class="stat">
+        <div><b class="num">${c('done')}</b><span><span class="dot" style="background:#89AD99;margin:0"></span>분석 완료</span></div>
+        <div><b class="num" style="color:var(--mid)">${c('run')}</b><span><span class="dot" style="background:#F59E0B;margin:0"></span>분석 중</span></div>
+        <div><b class="num">${c('wait')}</b><span><span class="dot" style="background:#6E7F75;margin:0"></span>대기</span></div>
+        <div><b class="num" style="color:#F87171">${c('fail')}</b><span><span class="dot" style="background:#EF4444;margin:0"></span>실패</span></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px dashed var(--line2);border-radius:9px;font-size:12px;color:var(--sub)">${ICON.cam.replace('<svg', '<svg width="15" height="15"')} 영상이 없는 카메라 <b style="color:var(--txt);margin-left:auto">${noVid}대</b></div>
+      <div class="cap" style="margin-top:2px">처리 중인 영상 (누르면 해당 카메라로)</div>
+      ${q.length ? q.map(v => `<div class="qrow" data-q="${v.cam}"><span class="bdg ${ST[v.st][0]}" style="height:20px">${ST[v.st][1]}</span><b>CAM-${v.cam}</b><span class="cap num" style="margin-left:auto">${v.st === 'run' ? Math.floor(v.p) + '%' : hm(v.a)}</span></div>`).join('') : '<div class="cap">처리 중인 영상이 없습니다.</div>'}
+      <div class="cap" style="margin-top:auto;line-height:1.7">
+        <span style="display:inline-flex;gap:6px;align-items:center"><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="#6E7F75" stroke-width="2" stroke-dasharray="3 2"/></svg>영상 없음 (+)</span>&nbsp;
+        <span style="display:inline-flex;gap:6px;align-items:center"><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="#89AD99" stroke-width="2.5"/></svg>완료 (숫자 = 영상 수)</span><br>
+        <span style="display:inline-flex;gap:6px;align-items:center"><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="#F59E0B" stroke-width="2.5"/></svg>분석 중 (진행 링)</span>&nbsp;
+        <span style="display:inline-flex;gap:6px;align-items:center"><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="#EF4444" stroke-width="2.5"/></svg>실패 (!)</span></div>
+    </div>`;
+  document.querySelectorAll('[data-q]').forEach(r => r.onclick = () => { const id = r.dataset.q; camView.w = Math.min(camView.w, 900); camView.x = CAM[id][0] - camView.w * .5; camView.y = CAM[id][1] - camView.w * 800 / 1200 / 2; openCam(id); });
+}
+
+/* ---------- 하단: 카메라별 녹화 커버리지 ---------- */
+function renderStrip() {
+  const span = (a, b) => `left:${Math.max(0, (a - 13) / 3 * 100)}%;width:${Math.max(0, (Math.min(b, 16) - Math.max(a, 13)) / 3 * 100)}%`;
+  const cams = [...new Set(V.map(v => v.cam))].sort();
+  if (selCam && !cams.includes(selCam)) cams.unshift(selCam);
+  document.getElementById('strip').innerHTML = `<div class="row" style="align-items:center;gap:12px"><b style="font-size:13px">카메라별 녹화 커버리지</b><span class="cap">11.08 · 13:00–16:00 · 이름을 누르면 지도에서 열림</span>
+      <span class="cap" style="margin-left:auto;display:flex;gap:10px"><span><span class="sw s-done"></span> 완료</span><span><span class="sw s-run"></span> 분석 중</span><span><span class="sw s-wait"></span> 대기</span><span><span class="sw s-fail"></span> 실패</span><span><span class="sw s-ovl"></span> 시간 겹침</span></span></div>
+    <div class="cov">${cams.map(id => { const vs = V.filter(v => v.cam === id);
+      const ovl = vs.flatMap((x, i) => vs.slice(i + 1).filter(y => x.a < y.b && x.b > y.a).map(y => [Math.max(x.a, y.a), Math.min(x.b, y.b)]));
+      return `<span class="nm ${id === selCam ? 'on' : ''}" data-c="${id}">CAM-${id} ${CAM[id][3]}</span><div class="lane">${vs.map(v => v.st === 'run' ? `<i class="seg s-done" style="${span(v.a, v.a + (v.b - v.a) * v.p / 100)}"></i><i class="seg s-run" style="${span(v.a + (v.b - v.a) * v.p / 100, v.b)}"></i>` : `<i class="seg s-${v.st}" style="${span(v.a, v.b)}"></i>`).join('')}${ovl.map(([a, b]) => `<i class="seg s-ovl" style="${span(a, b)}"></i>`).join('')}</div>`; }).join('')}</div>
+    <div class="axis"><span>13:00</span><span>13:30</span><span>14:00</span><span>14:30</span><span>15:00</span><span>15:30</span><span>16:00</span></div>`;
+  document.querySelectorAll('#strip [data-c]').forEach(n => n.onclick = () => openCam(n.dataset.c));
+}
+
+function renderAll() {
+  document.getElementById('hint').innerHTML = selCam ? `${ICON.cam.replace('<svg', '<svg width="14" height="14" style="color:var(--acc)"')}CAM-${selCam}에 영상을 넣는 중 · 빈 곳을 누르면 닫힘` : `${ICON.cam.replace('<svg', '<svg width="14" height="14" style="color:var(--acc)"')}지도에서 카메라를 눌러 녹화 영상을 넣으세요 · <b>+</b> 표시는 영상이 없는 카메라`;
+  renderMap(); renderLeft(); renderStrip(); renderCard();
+}
+
+/* 분석 진행 시뮬레이션: 동시에 2개까지 분석, 끝나면 대기 순서대로 시작 (입력 중에는 카드를 다시 그리지 않음) */
+setInterval(() => {
+  let changed = false;
+  V.filter(v => v.st === 'run').forEach(v => { v.p = Math.min(100, v.p + 1.6); v.n = Math.round(v.p * 4.1); changed = true;
+    if (v.p >= 100) { v.st = 'done'; toast(`CAM-${v.cam} 영상 분석 완료 · 트랙렛 ${v.n}개. 이제 검색에 쓰입니다.`); } });
+  if (V.filter(v => v.st === 'run').length < 2) { const w = V.find(v => v.st === 'wait'); if (w) { w.st = 'run'; changed = true; } }
+  if (!changed) return;
+  const mk = document.querySelector('#map svg #mk'); if (mk) mk.innerHTML = Object.keys(CAM).map(marker).join(''); else renderMap();   // 지도 전체를 다시 그리지 않아 드래그가 끊기지 않음
+  renderLeft(); renderStrip();
+  const typing = document.activeElement && document.activeElement.id === 'f-time';
+  if (selCam && !typing && !form.file) renderCard();
+}, 700);
+renderAll();
+window.addEventListener('resize', () => setTimeout(positionCard, 50));
+</script></body></html>
