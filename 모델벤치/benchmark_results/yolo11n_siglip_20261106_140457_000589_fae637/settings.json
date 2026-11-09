@@ -1,0 +1,21 @@
+{
+  "combination": "yolo11n_siglip",
+  "source_video": "D:\\LEFT\\video_1.mp4",
+  "query_image": "D:\\LEFT\\person_1.png",
+  "source_video_bytes": 63737029,
+  "query_sha384": "90fa5f843e2ece23782f2bfc83f9516820999b686dc94012ec49d9546ecd736c1e6730e1aa02bf63b6be29791d22f181",
+  "yolo_weights": "D:\\LEFT\\yolo11n.pt",
+  "yolo_device": "cuda:0",
+  "feature_device": "cuda:0",
+  "feature_model": "google/siglip-so400m-patch14-384",
+  "interval_requested_seconds": 1.0,
+  "top_k": 5,
+  "confidence": 0.3,
+  "iou": 0.7,
+  "imgsz": 640,
+  "max_det": 300,
+  "batch_size": 1,
+  "torch_precision": "float32",
+  "intel_precision_hint": null,
+  "rank_unit": "best person detection per sampled frame; repeated identities allowed"
+}

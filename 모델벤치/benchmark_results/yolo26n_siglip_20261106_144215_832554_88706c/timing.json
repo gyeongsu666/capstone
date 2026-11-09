@@ -1,0 +1,85 @@
+{
+  "status": "complete",
+  "settings": {
+    "combination": "yolo26n_siglip",
+    "source_video": "D:\\LEFT\\video_1.mp4",
+    "query_image": "D:\\LEFT\\person_1.png",
+    "source_video_bytes": 63737029,
+    "query_sha384": "90fa5f843e2ece23782f2bfc83f9516820999b686dc94012ec49d9546ecd736c1e6730e1aa02bf63b6be29791d22f181",
+    "yolo_weights": "D:\\LEFT\\yolo26n.pt",
+    "yolo_device": "cuda:0",
+    "feature_device": "cuda:0",
+    "feature_model": "google/siglip-so400m-patch14-384",
+    "interval_requested_seconds": 1.0,
+    "top_k": 5,
+    "confidence": 0.3,
+    "iou": 0.7,
+    "imgsz": 640,
+    "max_det": 300,
+    "batch_size": 1,
+    "torch_precision": "float32",
+    "intel_precision_hint": null,
+    "rank_unit": "best person detection per sampled frame; repeated identities allowed"
+  },
+  "counts": {
+    "fps": 30.0,
+    "width": 1918,
+    "height": 1078,
+    "container_frame_count": 1767,
+    "decoded_frames": 1767,
+    "sampled_frames": 59,
+    "stride_frames": 30,
+    "effective_interval_seconds": 1.0,
+    "raw_person_detections": 596,
+    "invalid_boxes": 0,
+    "gallery_vectors": 596,
+    "vector_dimension": 1152,
+    "top_k_returned": 5
+  },
+  "times": {
+    "import_seconds": 2.3108703999896534,
+    "setup_seconds": 10.47262790001696,
+    "model_load_including_download_seconds": 8.83735380001599,
+    "warmup_seconds": 1.1071161000290886,
+    "query_embedding_seconds": 0.4248375999741256,
+    "video_decode_seconds": 9.510342300578486,
+    "yolo_detection_seconds": 1.1822754999739118,
+    "gallery_embedding_seconds": 265.9139412000077,
+    "cosine_similarity_seconds": 0.019524599541909993,
+    "video_search_seconds": 276.7153372000321,
+    "export_seconds": 0.22261510003590956,
+    "end_to_end_seconds": 289.72860759997275,
+    "mean_detection_ms_per_sampled_frame": 20.038567796167996,
+    "mean_embedding_ms_per_person": 446.1643308724961,
+    "sampled_frames_per_search_second": 0.2132155036905311
+  },
+  "weight_loader": "vision_tensor_streaming_no_mmap",
+  "hardware": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cpu": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+    "cuda_devices": {
+      "cuda:0": "NVIDIA GeForce GTX 1650 Ti"
+    }
+  },
+  "versions": {
+    "python": "3.13.12 (tags/v3.13.12:1cbe481, Feb  3 2026, 18:22:25) [MSC v.1944 64 bit (AMD64)]",
+    "torch": "2.14.1+cu126",
+    "ultralytics": "8.4.193",
+    "numpy": "2.5.4",
+    "opencv-python": "5.0.0.93",
+    "transformers": "5.22.1"
+  },
+  "warnings": [],
+  "timing_notes": [
+    "model_load, warmup and query_embedding are INCLUDED in setup; do not sum twice.",
+    "decode, detection, embedding and similarity are INCLUDED in video_search.",
+    "end_to_end includes imports, setup, video search and result export; excludes final timing.json and benchmark_summary.csv writes and interpreter startup.",
+    "Detection includes preprocess, inference, postprocess and CPU box transfer.",
+    "Embedding includes color/resize/processor, inference, CPU transfer and L2 normalization.",
+    "CUDA synchronized at measured stage boundaries; each crop uses batch size 1.",
+    "Run all four sequentially with matching arguments and an idle machine.",
+    "SigLIP uses --siglip-device; Intel uses CPU. These devices are reported explicitly.",
+    "Cosine scores from different embedding models are not accuracy measurements.",
+    "Ranks are scenes, not distinct identities. No tracking or identity deduplication."
+  ]
+}

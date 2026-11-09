@@ -1,0 +1,26 @@
+Traceback (most recent call last):
+  File "D:\LEFT\search_benchmark.py", line 103, in __init__
+    self.model = SiglipVisionModel.from_pretrained(SIGLIP_ID, dtype=torch.float32)
+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\LEFT\.venv\Lib\site-packages\transformers\modeling_utils.py", line 4353, in from_pretrained
+    loading_info, disk_offload_index = cls._load_pretrained_model(
+                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        model, state_dict, checkpoint_files, load_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "D:\LEFT\.venv\Lib\site-packages\transformers\modeling_utils.py", line 4486, in _load_pretrained_model
+    file_pointer = safe_open(file, framework="pt", device=device, backend=backend)
+OSError: 이 작업을 완료하기 위한 페이징 파일이 너무 작습니다. (os error 1455)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "D:\LEFT\search_benchmark.py", line 280, in run
+    SiglipEncoder(feature_device, torch, cv2, np)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\LEFT\search_benchmark.py", line 106, in __init__
+    raise RuntimeError(
+    ...<5 lines>...
+    ) from error
+RuntimeError: Windows could not allocate memory while opening SigLIP weights (error 1455). GPU inference has not started. Close unused memory-heavy programs, then check Windows Virtual memory/page file settings and free disk space. See the error 1455 section in README_실험.md. Changing --interval does not reduce model-loading memory.

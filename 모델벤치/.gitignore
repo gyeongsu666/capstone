@@ -1,0 +1,12 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.benchmark_review/
+.capstone_publish/
+*.partial.mp4
+_bytetrack_*.yaml
+.env
+.env.*
+!.env.example

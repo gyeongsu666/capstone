@@ -1,0 +1,21 @@
+{
+  "combination": "yolo11n_intel",
+  "source_video": "D:\\LEFT\\video_1.mp4",
+  "query_image": "D:\\LEFT\\person_2.png",
+  "source_video_bytes": 63737029,
+  "query_sha384": "6ef07e48d89b808a0e1404f9662cdc08ebbfb6ceb8034955ac4d7f55b9a81988148bbcf53236247a658695e9646a26b0",
+  "yolo_weights": "D:\\LEFT\\yolo11n.pt",
+  "yolo_device": "cuda:0",
+  "feature_device": "CPU",
+  "feature_model": "person-reidentification-retail-0287",
+  "interval_requested_seconds": 1.0,
+  "top_k": 5,
+  "confidence": 0.3,
+  "iou": 0.7,
+  "imgsz": 640,
+  "max_det": 300,
+  "batch_size": 1,
+  "torch_precision": "float32",
+  "intel_precision_hint": "f32",
+  "rank_unit": "best person detection per sampled frame; repeated identities allowed"
+}
