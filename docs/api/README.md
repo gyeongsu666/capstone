@@ -1,93 +1,196 @@
-# ReFind API 명세서 (초안 v0.1)
+# ReFind API 명세서 (OpenAPI 초안)
 
-- 작성일: 2026-11-08
+- 작성일: 2026-11-16
+- 명세 파일: [openapi.json](openapi.json) (OpenAPI 3.1.0, 버전 1.0.0-draft)
+- 상태: 계약 초안. 서버 구현과 실제 API 테스트는 아직 하지 않았습니다.
+- 이전 장별 MD 11개(초안 v0.1)는 이 파일로 대체했습니다.
 
-- 원본 `ReFind_API_명세서.md`를 장별로 나눈 폴더입니다. 내용은 원본과 같고, 파일마다 맨 위에 요약을 붙였습니다.
+## 보는 방법
 
-## 파일 구성
+- [Swagger Editor](https://editor.swagger.io)에서 `File > Import file`로 `openapi.json`을 열면 화면으로 볼 수 있습니다.
 
-| 파일 | 원본 장 | 내용 |
-|---|---|---|
-| [01_공통규칙.md](01_공통규칙.md) | 1 | 주소, 데이터 형식, 응답·에러 형식, 상태 코드, 비동기 작업, 업로드 제한 |
-| [02_공통API.md](02_공통API.md) | 2 | 서버 상태, 작업 상태 |
-| [03_S1_카메라.md](03_S1_카메라.md) | 3 | 카메라 API 5개 |
-| [04_S1_도보그래프.md](04_S1_도보그래프.md) | 4 | 노드·간선 API 7개 |
-| [05_S1_위험지역_보행속도.md](05_S1_위험지역_보행속도.md) | 5 | 위험 지역 4개, 보행 속도 2개 |
-| [06_S1_영상.md](06_S1_영상.md) | 6 | 영상 API 7개 |
-| [07_S1_트랙렛.md](07_S1_트랙렛.md) | 7 | 트랙렛 API 3개 |
-| [08_S2_사건.md](08_S2_사건.md) | 8 | 사건 API 5개 |
-| [09_S3_검색_후보_판정.md](09_S3_검색_후보_판정.md) | 9 | 검색·후보·판정 API 7개 |
-| [10_S4_S5_동선_수색범위_내보내기.md](10_S4_S5_동선_수색범위_내보내기.md) | 10 | 동선, 수색 범위, 내보내기 |
-| [11_내부API_GPU서버.md](11_내부API_GPU서버.md) | 11 | 백엔드 → GPU 서버 API 4개 |
+## 파일 안의 추가 정보
 
-## 읽는 순서
+| 키 | 내용 |
+|---|---|
+| `x-websocket` | 실시간 감시·분석 진행률 WebSocket 계약 |
+| `x-internal-contracts` | 백엔드와 GPU 워커 사이 큐 메시지 계약 |
+| `x-error-code-catalog`, `x-task-error-codes` | 에러 코드 목록 |
+| `x-feature-coverage` | 기능 요구사항과 API 연결표 |
+| `x-pending-decisions` | 팀 확정이 필요한 항목 (D01~D07) |
+| `x-review-findings` | 기존 문서와 충돌한 부분과 처리 방식 |
 
-1. 01 공통 규칙, 02 공통 API: 모든 API에 해당하는 약속
-2. 03~07 (S1): 카메라, 도보 그래프, 위험 지역, 보행 속도, 영상, 트랙렛 준비
-3. 08 (S2): 사건 등록
-4. 09 (S3): 검색 → 후보 확인 → 판정
-5. 10 (S4, S5): 동선, 수색 범위 확인
-6. 11: 백엔드 서버와 GPU 서버 사이 내부 API
+## 엔드포인트 전체 목록 (68개)
 
----
+### 공통
 
-## 12. 엔드포인트 전체 목록
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| POST | `/api/auth/login` | 로그인 | 200 |
+| POST | `/api/auth/logout` | 로그아웃 | 200 |
+| GET | `/api/auth/me` | 내 정보·역할 조회 | 200 |
+| POST | `/api/auth/password` | 비밀번호 변경·최초 로그인 변경 | 200 |
+| GET | `/api/tasks/{task_id}` | 작업 상태 조회 | 200 |
 
-### 외부 API (45개)
+### 보조 조회
 
-| # | 메서드 | 경로 | 용도 | 성공 |
-|---|---|---|---|---|
-| 1 | GET | `/api/health` | 서버 상태 | 200 |
-| 2 | GET | `/api/tasks/{task_id}` | 작업 상태 | 200 |
-| 3 | GET | `/api/cameras` | 카메라 목록 | 200 |
-| 4 | POST | `/api/cameras` | 카메라 등록 | 201 |
-| 5 | GET | `/api/cameras/{camera_id}` | 카메라 상세 | 200 |
-| 6 | PATCH | `/api/cameras/{camera_id}` | 카메라 보정 | 200 |
-| 7 | DELETE | `/api/cameras/{camera_id}` | 카메라 삭제 | 204 |
-| 8 | GET | `/api/walk-graph` | 도보 그래프 전체 | 200 |
-| 9 | POST | `/api/walk-graph/nodes` | 노드 추가 | 201 |
-| 10 | PATCH | `/api/walk-graph/nodes/{node_id}` | 노드 수정 | 200 |
-| 11 | DELETE | `/api/walk-graph/nodes/{node_id}` | 노드 삭제 | 204 |
-| 12 | POST | `/api/walk-graph/edges` | 간선 추가 | 201 |
-| 13 | PATCH | `/api/walk-graph/edges/{edge_id}` | 간선 보정 | 200 |
-| 14 | DELETE | `/api/walk-graph/edges/{edge_id}` | 간선 삭제 | 204 |
-| 15 | GET | `/api/danger-zones` | 위험 지역 목록 | 200 |
-| 16 | POST | `/api/danger-zones` | 위험 지역 등록 | 201 |
-| 17 | PATCH | `/api/danger-zones/{zone_id}` | 위험 지역 수정 | 200 |
-| 18 | DELETE | `/api/danger-zones/{zone_id}` | 위험 지역 삭제 | 204 |
-| 19 | GET | `/api/walking-speeds` | 보행 속도 조회 | 200 |
-| 20 | PUT | `/api/walking-speeds/{target_type}` | 보행 속도 설정 | 200 |
-| 21 | POST | `/api/videos` | 영상 업로드 | 202 |
-| 22 | GET | `/api/videos` | 영상 목록 | 200 |
-| 23 | GET | `/api/videos/{video_id}` | 영상 정보 | 200 |
-| 24 | PATCH | `/api/videos/{video_id}` | 시각 보정 | 200 |
-| 25 | DELETE | `/api/videos/{video_id}` | 영상 삭제 | 204 |
-| 26 | POST | `/api/videos/{video_id}/retry` | 분석 재시도 | 202 |
-| 27 | GET | `/api/videos/{video_id}/stream` | 재생용 영상 | 200, 206 |
-| 28 | GET | `/api/videos/{video_id}/tracklets` | 영상 속 인물 목록 | 200 |
-| 29 | GET | `/api/tracklets/{tracklet_id}` | 트랙렛 상세 | 200 |
-| 30 | GET | `/api/tracklets/{tracklet_id}/thumbnail` | 대표 이미지 | 200 |
-| 31 | POST | `/api/cases` | 사건 등록 | 202 |
-| 32 | GET | `/api/cases` | 사건 목록 | 200 |
-| 33 | GET | `/api/cases/{case_id}` | 사건 정보 | 200 |
-| 34 | PATCH | `/api/cases/{case_id}` | 사건 수정, 종결 | 200 |
-| 35 | GET | `/api/cases/{case_id}/photo` | 등록 사진 | 200 |
-| 36 | POST | `/api/cases/{case_id}/searches` | 검색 시작 | 202 |
-| 37 | GET | `/api/cases/{case_id}/searches` | 검색 이력 | 200 |
-| 38 | GET | `/api/cases/{case_id}/searches/{search_id}` | 검색 상세 | 200 |
-| 39 | GET | `/api/cases/{case_id}/candidates` | 후보 목록 | 200 |
-| 40 | POST | `/api/cases/{case_id}/decisions` | 판정 저장 | 201 |
-| 41 | GET | `/api/cases/{case_id}/decisions` | 판정 이력 | 200 |
-| 42 | DELETE | `/api/cases/{case_id}/decisions/{decision_id}` | 판정 취소 | 204 |
-| 43 | GET | `/api/cases/{case_id}/route` | 동선 | 200 |
-| 44 | GET | `/api/cases/{case_id}/search-area` | 수색 범위 | 200 |
-| 45 | GET | `/api/cases/{case_id}/export` | 기록 내보내기 | 200 |
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/users/directory` | 공동 담당 추가용 계정 검색 | 200 |
+| GET | `/api/map` | 수색 화면 지도 조회 | 200 |
 
-### 내부 API (4개)
+### 사건
 
-| # | 메서드 | 경로 | 용도 | 성공 |
-|---|---|---|---|---|
-| 1 | GET | `/health` | GPU 서버 상태 | 200 |
-| 2 | POST | `/jobs/video-analysis` | 영상 분석 요청 | 202 |
-| 3 | POST | `/jobs/query-vector` | 사진 특징 추출 요청 | 202 |
-| 4 | GET | `/jobs/{job_id}` | 작업 상태와 결과 | 200 |
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/cases` | 사건 목록 | 200 |
+| POST | `/api/cases` | 사건 등록 | 201 |
+| GET | `/api/cases/{case_id}` | 사건 상세 | 200 |
+| PATCH | `/api/cases/{case_id}` | 사건 수정 | 200 |
+| POST | `/api/cases/{case_id}/close` | 사건 종료·사유 저장 | 200 |
+
+### 공동 담당
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/cases/{case_id}/assignees` | 사건 담당자 목록 | 200 |
+| POST | `/api/cases/{case_id}/assignees` | 공동 담당자 추가 | 201 |
+| DELETE | `/api/cases/{case_id}/assignees/{user_id}` | 공동 담당자 제거 | 200 |
+
+### 대상 지정
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| POST | `/api/cases/{case_id}/query/photo` | 기준 사진 업로드·특징 추출 | 202 |
+| POST | `/api/cases/{case_id}/query/tracklet` | 영상 트랙렛을 기준 대상으로 선택 | 200 |
+
+### 검색 조건
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/cases/{case_id}/search-conditions` | 사건별 검색 조건 조회 | 200 |
+| PATCH | `/api/cases/{case_id}/search-conditions` | 사건별 유사도 기준 수정 | 200 |
+
+### 후보 검색
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| POST | `/api/cases/{case_id}/searches` | 후보 검색 실행 | 201, 202 |
+| GET | `/api/cases/{case_id}/searches/{search_id}` | 검색 실행 상태·스냅샷 조회 | 200 |
+| GET | `/api/cases/{case_id}/candidates` | 검색 후보 목록·판단 근거 | 200 |
+
+### 판단
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| POST | `/api/cases/{case_id}/decisions` | 후보 예·아니오·보류 판정 저장 | 201 |
+| GET | `/api/cases/{case_id}/decisions` | 판정 기록 조회 | 200 |
+| POST | `/api/cases/{case_id}/decisions/{decision_id}/reverse` | 판정 번복·영향받은 장면 목록 | 200 |
+
+### 동선·범위
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/cases/{case_id}/route` | 확정 목격 동선 조회 | 200 |
+| GET | `/api/cases/{case_id}/scenes/{scene_id}` | 장면 상세·강조/원본 대응 구간 | 200 |
+| GET | `/api/cases/{case_id}/search-area` | 현재 위치 3단계 범위·위험 중첩·우선 구역 | 200 |
+
+### 실시간 감시
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/cases/{case_id}/watch` | 실시간 감시 상태 | 200 |
+| PUT | `/api/cases/{case_id}/watch` | 실시간 감시 시작·중지 | 200 |
+| GET | `/api/cases/{case_id}/alerts` | 출현 알림 목록 | 200 |
+| GET | `/api/cases/{case_id}/alerts/{alert_id}` | 출현 알림 상세·현재 판정 | 200 |
+| POST | `/api/cases/{case_id}/alerts/{alert_id}/decision` | 출현 알림 예·아니오 응답 | 200 |
+
+### 사건 영상
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| POST | `/api/cases/{case_id}/videos` | 사건 영상 추가·위치·방향·녹화 시각 | 202 |
+| GET | `/api/cases/{case_id}/videos` | 사건에 추가한 영상 목록 | 200 |
+
+### 영상 조회
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/videos/{video_id}` | 영상 상세·분석 현황·재생 주소 | 200 |
+| GET | `/api/videos/{video_id}/tracklets` | 영상 속 인물 선택용 트랙렛 목록 | 200 |
+| GET | `/api/tracklets/{tracklet_id}` | 트랙렛 장면 상세 | 200 |
+
+### 관리자·카메라
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/cameras` | 카메라·보조지점 목록 | 200 |
+| POST | `/api/cameras` | 카메라·보조지점 등록 | 201 |
+| PATCH | `/api/cameras/{node_id}` | 카메라·보조지점 수정 | 200 |
+| DELETE | `/api/cameras/{node_id}` | 카메라·보조지점 삭제 | 200 |
+
+### 관리자·도보 경로
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/walk-graph` | 도보 경로 구간·우회 의심 조회 | 200 |
+| POST | `/api/walk-graph/recalculations` | 도보 경로 다시 계산 | 202 |
+| PATCH | `/api/walk-graph/{edge_id}` | 도보 구간 보정값 수정 | 200 |
+
+### 관리자·위험 지역
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/danger-zones` | 위험 지역 목록 | 200 |
+| POST | `/api/danger-zones` | 위험 지역 등록 | 201 |
+| PATCH | `/api/danger-zones/{zone_id}` | 위험 지역 수정 | 200 |
+| DELETE | `/api/danger-zones/{zone_id}` | 위험 지역 삭제 | 200 |
+
+### 관리자·녹화 영상
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/videos` | 녹화 영상 목록·분석 상태·진행률 | 200 |
+| POST | `/api/videos` | 녹화 영상 업로드·분석 접수 | 202 |
+| POST | `/api/videos/{video_id}/analysis` | 실패한 영상 분석 재처리 | 202, 200 |
+
+### 관리자·설정
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/settings` | 시스템 설정 조회 | 200 |
+| PATCH | `/api/settings` | 시스템 설정 수정 | 200 |
+
+### 관리자·계정
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/users` | 계정 목록 | 200 |
+| POST | `/api/users` | 계정 생성·임시 비밀번호 발급 | 201 |
+| PATCH | `/api/users/{user_id}/role` | 계정 역할 변경 | 200 |
+| POST | `/api/users/{user_id}/deactivate` | 계정 비활성화 | 200 |
+| POST | `/api/users/{user_id}/password-reset` | 계정 비밀번호 초기화 | 200 |
+
+### 관리자·이용 기록
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/audit-logs` | 이용 기록 조회·필터 | 200 |
+
+### 관리자·데이터 보관
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/retention-policy` | 데이터 보관 기간 조회 | 200 |
+| PATCH | `/api/retention-policy` | 데이터 보관 기간 수정 | 200 |
+| GET | `/api/deletion-candidates` | 삭제 예정·보호 대상 목록 | 200 |
+
+### 파일 제공
+
+| 메서드 | 경로 | 용도 | 성공 |
+|---|---|---|---|
+| GET | `/api/cases/{case_id}/query/photo` | 기준 사진 조회 | 200 |
+| GET | `/api/videos/{video_id}/stream` | 원본과 시간 대응하는 재생용 MP4 | 200, 206 |
+| GET | `/api/tracklets/{tracklet_id}/thumbnail` | 트랙렛 썸네일 | 200 |
+| GET | `/api/cases/{case_id}/alerts/{alert_id}/snapshot` | 출현 알림 스냅샷 | 200 |
+| GET | `/api/tracklets/{tracklet_id}/highlight` | 인물 강조 하이라이트 MP4 | 200, 206 |
