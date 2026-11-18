@@ -48,7 +48,7 @@ export function LoginPage() {
     >
       <Card style={{ width: 380 }} styles={{ body: { padding: 32 } }}>
         <div style={{ marginBottom: 24 }}>
-          <Typography.Title level={3}>ReFind</Typography.Title>
+          <Typography.Title level={3}>Looking Easily For Tracked</Typography.Title>
           <Typography.Text type="secondary">CCTV 기반 실종자 동선 추적 시스템</Typography.Text>
         </div>
         {mustChange ? (

@@ -161,7 +161,7 @@ export function Sidebar({ collapsed, alertCount = 0, alertCaseIds = [] }: Sideba
           }}
         >
           <div style={{ color: '#fff', fontSize: collapsed ? 14 : 20, fontWeight: 700 }}>
-            {collapsed ? 'RF' : 'ReFind'}
+            {collapsed ? 'L' : 'LEFT'}
           </div>
           {!collapsed && user && (
             <span
