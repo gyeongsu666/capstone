@@ -1,5 +1,7 @@
 # API 명세 (초안)
 
+> **2026-11-18: 이 문서는 백엔드 `docs/api/openapi.json`으로 대체됐다.** 지금 MSW 가짜 서버만 이 모양으로 동작하며, 실제 연결은 openapi.json을 따른다. 결정 사항과 백엔드 요청은 `docs/backend-requests.md`, 차이 목록은 `docs/openapi-diff.md`.
+
 > 원본: claude.ai 문서의 "API 명세" 탭. 2026-11-16 기준.
 > 프론트는 이 모양으로 MSW 가짜 서버를 만든다. 백엔드(FastAPI)는 이를 보고 껍데기 API를 만들며, 구현상 맞지 않는 부분은 백엔드가 고친다. **최종 기준은 FastAPI가 만드는 `/openapi.json`** 이다. 그것이 나오면 `openapi-typescript`로 타입을 생성해 이 문서 대신 쓴다.
 

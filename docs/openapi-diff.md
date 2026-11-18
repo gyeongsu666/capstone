@@ -4,6 +4,7 @@
   - 프론트: `docs/api-spec.md` (2026-11-16 기준, MSW 가짜 서버가 이 모양으로 동작)
   - 백엔드: `gyeongsu666/capstone` `docs` 브랜치 `docs/api/openapi.json` (커밋 `1309e01`, 1.0.0-draft, 엔드포인트 68개, 미구현)
 - 작성일: 2026-11-16
+- 결정 사항과 백엔드 요청: `docs/backend-requests.md` (2026-11-18)
 
 ## 1. 팀 결정이 필요한 것
 
