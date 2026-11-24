@@ -1,5 +1,5 @@
 // 백엔드 서버 타입. src/api/generated/schema.d.ts는 openapi/openapi.json에서 생성한다(npm run gen:api).
-// 백엔드에 추가를 요청한 값(docs/backend-api-final-requests.md R1~R7)은 생성 타입에 없으므로 여기서 덧붙인다.
+// 백엔드에 추가를 요청한 값(docs 브랜치 docs/api/frontend-api-requests.md R1~R7)은 생성 타입에 없으므로 여기서 덧붙인다.
 // 요청이 반영된 openapi.json이 오면 다시 생성하고 아래 "요청" 덧붙임을 지운다.
 import type { components } from '@/api/generated/schema';
 

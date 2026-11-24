@@ -5,11 +5,12 @@ CCTV 기반 실종자 동선 추적 시스템(캡스톤디자인)의 웹 프론�
 ## 먼저 읽을 문서
 
 작업 전에 관련 문서를 읽는다. 문서와 이 파일이 다르면 **문서가 우선**이고, 문서끼리 다르면 아래 순서가 우선이다.
+팀 공통 문서(API, 요구사항)는 **`docs` 브랜치**에 있다. 로컬에서는 `git fetch origin docs` 후 `git show origin/docs:<경로>`로 읽는다.
 
 1. `docs/design.md` — 레이아웃, 색, 글꼴, 지도 표현, 공통 부품, 화면별 배치
-2. API: 백엔드 `openapi/openapi.json`(주소·필드·에러·권한의 기본 계약, 백엔드 `docs` 브랜치에서 복사) + `docs/backend-api-final-requests.md`(추가 요청 R1~R7과 프론트 정책 확정안)
+2. API: `docs` 브랜치 `docs/api/openapi.json`(기본 계약. 이 저장소의 `openapi/openapi.json`은 타입 생성용 복사본) + `docs` 브랜치 `docs/api/frontend-api-requests.md`(추가 요청 R1~R7과 프론트 정책 확정안)
 3. `docs/mock-scenario.md` — MSW 가짜 데이터와 시나리오, 개발 패널
-4. `docs/requirements.md` — 기능 요구사항(SYS00~02 번호의 출처)
+4. `docs` 브랜치 `docs/requirements.md` — 기능 요구사항(SYS00~02 번호의 출처)
 5. `docs/mockups/*.png` — 시안 두 장. 레이아웃 참고용. 색과 일부 배치는 `docs/design.md`의 "시안에서 바뀌는 점"을 따른다
 
 ## 기술 스택 (확정)
@@ -101,7 +102,7 @@ public/mock/    가짜 썸네일, 영상
 - `.env.local`과 카카오 키 커밋
 - 실제 CCTV 영상, 인터넷에서 받은 사람 사진 사용
 - `src/api` 밖에서 fetch 호출
-- 문서에 없는 API를 마음대로 추가. 필요하면 먼저 사용자에게 묻고, 추가했다면 `docs/backend-api-final-requests.md`에도 반영 제안
+- 문서에 없는 API를 마음대로 추가. 필요하면 먼저 사용자에게 묻고, 추가했다면 `docs` 브랜치 `docs/api/frontend-api-requests.md`에도 반영 제안
 
 ## 작업 순서
 
