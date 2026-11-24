@@ -4,6 +4,8 @@
 - 명세 파일: [openapi.json](openapi.json) (OpenAPI 3.1.0, 버전 1.0.0-draft)
 - 상태: 계약 초안. 서버 구현과 실제 API 테스트는 아직 하지 않았습니다.
 - 이전 장별 MD 11개(초안 v0.1)는 이 파일로 대체했습니다.
+- 프론트 추가·변경 요청(R1~R7)과 프론트 정책: [frontend-api-requests.md](frontend-api-requests.md)
+- 기능 요구사항(SYS00~02): [../requirements.md](../requirements.md)
 
 ## 보는 방법
 
