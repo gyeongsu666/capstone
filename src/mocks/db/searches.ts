@@ -1,7 +1,7 @@
 // 후보 검색 실행(search_id)·판단·동선을 백엔드(openapi.json) 모양으로.
 // 가짜 DB의 후보는 "기준점(anchor)별 유사도"를 갖고 있어서, 검색 하나 = 그 시점의 기준점으로 본 후보 목록이다.
 import type { S } from '@/api/server';
-import type { Scene } from '@/api/types';
+import type { Scene } from '@/mocks/db/legacyTypes';
 import { control } from '@/mocks/control';
 import { db, findCase, findUser, pubId } from '@/mocks/db';
 import { toServerUserSummary } from '@/mocks/db/cases';
@@ -121,9 +121,9 @@ export function toServerDecision(d: DbDecision): S['Decision'] {
   return {
     decision_id: pubId(d.id),
     case_id: Number(d.case_id),
-    source_type: 'tracklet',
-    tracklet_id: scene ? trackletId(scene) : null,
-    alert_id: null,
+    source_type: d.alert_id ? 'alert' : 'tracklet',
+    tracklet_id: !d.alert_id && scene ? trackletId(scene) : null,
+    alert_id: d.alert_id ? pubId(d.alert_id) : null,
     search_id: d.search_id ?? null,
     verdict,
     status: d.reverted ? 'reversed' : 'active',
@@ -291,12 +291,14 @@ export function toServerRouteScene(cand: DbCandidate): S['RouteScene'] {
   const d = activeDecision(cand.id);
   const loc = camLoc(scene) ?? { lat: 0, lng: 0 };
   const tid = trackletId(scene);
+  // 출현 알림에서 확정한 장면은 alert:{id}
+  const alertId = d?.alert_id ? pubId(d.alert_id) : null;
   return {
-    scene_id: `tracklet:${tid}`,
+    scene_id: alertId ? `alert:${alertId}` : `tracklet:${tid}`,
     decision_id: d ? pubId(d.id) : '0',
-    source_type: 'tracklet',
-    tracklet_id: tid,
-    alert_id: null,
+    source_type: alertId ? 'alert' : 'tracklet',
+    tracklet_id: alertId ? null : tid,
+    alert_id: alertId,
     camera_id: Number(scene.camera_id),
     camera_name: cameraName(scene),
     location: { type: 'Point', coordinates: [loc.lng, loc.lat] },

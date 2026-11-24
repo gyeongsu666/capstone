@@ -7,7 +7,6 @@ import {
   Divider,
   Form,
   Input,
-  InputNumber,
   List,
   Modal,
   Progress,
@@ -33,7 +32,6 @@ interface FormValues {
   name: string;
   location: LatLngView;
   directionDeg: number;
-  fovDeg: number;
   recordedAt: Dayjs;
 }
 
@@ -56,7 +54,6 @@ export function CaseVideoModal({
   const { data: cameras = [] } = useCameras(caseData.id);
   const location = Form.useWatch('location', form);
   const direction = Form.useWatch('directionDeg', form);
-  const fov = Form.useWatch('fovDeg', form);
   const file = Form.useWatch('file', form);
 
   const task = useTaskPolling(taskId, (t) => {
@@ -74,12 +71,11 @@ export function CaseVideoModal({
         name: v.name.trim(),
         location: v.location,
         directionDeg: v.directionDeg,
-        fovDeg: v.fovDeg,
         recordedAt: v.recordedAt.format('YYYY-MM-DDTHH:mm:ssZ'),
       },
       {
         onSuccess: (res) => {
-          message.info(`${res.camera.code} 영상을 올렸어요. 분석을 시작해요.`);
+          message.info(`영상 #${res.video_id}을 올렸어요. 분석을 시작해요.`);
           setTaskId(res.task_id);
           form.resetFields();
         },
@@ -113,7 +109,7 @@ export function CaseVideoModal({
                 extra={<AnalysisStatusBadge status={v.status} progress={v.progress} small />}
               >
                 <span className="num">
-                  {v.cameraCode} {v.cameraName} · {v.fileName} · 녹화 {formatDateTime(v.recordedAt)}
+                  {v.cameraCode} {v.cameraName} · {v.label} · 녹화 {formatDateTime(v.recordedAt)}
                 </span>
               </List.Item>
             )}
@@ -130,7 +126,7 @@ export function CaseVideoModal({
         layout="vertical"
         requiredMark="optional"
         onFinish={submit}
-        initialValues={{ directionDeg: 0, fovDeg: 90, recordedAt: dayjs(caseData.missingAt) }}
+        initialValues={{ directionDeg: 0, recordedAt: dayjs(caseData.missingAt) }}
       >
         <Form.Item
           name="file"
@@ -145,8 +141,8 @@ export function CaseVideoModal({
         </Form.Item>
         <Form.Item
           name="name"
-          label="촬영 장소 이름"
-          rules={[{ required: true, whitespace: true, message: '이름을 입력하세요.' }]}
+          label="촬영 장소 이름 (선택)"
+          extra="비우면 '사건 영상 N'으로 정해져요."
         >
           <Input placeholder="예: OO편의점 앞" maxLength={50} />
         </Form.Item>
@@ -160,23 +156,17 @@ export function CaseVideoModal({
             onChange={(pos) => form.setFieldValue('location', pos)}
             cameras={cameras}
             directionDeg={direction}
-            fovDeg={fov}
             height={220}
           />
         </Form.Item>
-        <Space size={24} style={{ width: '100%' }} align="start">
-          <Form.Item name="directionDeg" label="촬영 방향(북=0°)" style={{ width: 280 }}>
-            <Slider
-              min={0}
-              max={359}
-              marks={{ 0: '북', 90: '동', 180: '남', 270: '서' }}
-              tooltip={{ formatter: (v) => `${v}°` }}
-            />
-          </Form.Item>
-          <Form.Item name="fovDeg" label="화각">
-            <InputNumber min={10} max={180} suffix="°" style={{ width: 110 }} />
-          </Form.Item>
-        </Space>
+        <Form.Item name="directionDeg" label="촬영 방향(북=0°)" style={{ width: 280 }}>
+          <Slider
+            min={0}
+            max={359}
+            marks={{ 0: '북', 90: '동', 180: '남', 270: '서' }}
+            tooltip={{ formatter: (v) => `${v}°` }}
+          />
+        </Form.Item>
         <Form.Item
           name="recordedAt"
           label="녹화 시작 시각"

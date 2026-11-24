@@ -6,7 +6,7 @@ import {
   Form,
   Input,
   Modal,
-  Popconfirm,
+  Popover,
   Radio,
   Select,
   Space,
@@ -16,7 +16,13 @@ import {
   type TableProps,
 } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
-import { useCreateUser, useResetPassword, useUpdateUser, useUsers } from '@/api/admin';
+import {
+  useChangeRole,
+  useCreateUser,
+  useDeactivateUser,
+  useResetPassword,
+  useUsers,
+} from '@/api/admin';
 import { isApiError } from '@/api/client';
 import type { RoleView, UserView } from '@/api/view';
 import { useAuthStore } from '@/stores/auth';
@@ -69,22 +75,103 @@ function TempPasswordModal({
   );
 }
 
-/** 계정: 표 + 계정 추가, 줄마다 역할 변경·비활성화·비밀번호 초기화 (SYS01-007) */
+/** 사유를 받아 실행하는 버튼(비활성화·비밀번호 초기화) */
+function ReasonButton({
+  label,
+  title,
+  description,
+  okText,
+  danger,
+  disabled,
+  loading,
+  onConfirm,
+}: {
+  label: string;
+  title: string;
+  description: string;
+  okText: string;
+  danger?: boolean;
+  disabled?: boolean;
+  loading?: boolean;
+  onConfirm: (reason: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  return (
+    <Popover
+      trigger="click"
+      open={open && !disabled}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setReason('');
+      }}
+      title={title}
+      content={
+        <Space direction="vertical" style={{ width: 280 }}>
+          <div style={{ fontSize: 13 }}>{description}</div>
+          <Input.TextArea
+            rows={2}
+            autoFocus
+            placeholder="사유 (필수, 이용 기록에 남아요)"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            maxLength={200}
+          />
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button size="small" onClick={() => setOpen(false)}>
+              취소
+            </Button>
+            <Button
+              size="small"
+              type="primary"
+              danger={danger}
+              disabled={!reason.trim()}
+              onClick={() => {
+                onConfirm(reason.trim());
+                setOpen(false);
+                setReason('');
+              }}
+            >
+              {okText}
+            </Button>
+          </Space>
+        </Space>
+      }
+    >
+      <Button size="small" danger={danger} disabled={disabled} loading={loading}>
+        {label}
+      </Button>
+    </Popover>
+  );
+}
+
+/**
+ * 계정: 표 + 계정 추가, 줄마다 역할 변경·비활성화·비밀번호 초기화 (SYS01-007).
+ * 비활성화는 되돌릴 수 없다(백엔드에 재활성화 API 없음, D06).
+ */
 export function AccountsTab() {
   const { message } = App.useApp();
   const me = useAuthStore((s) => s.user);
   const [q, setQ] = useState('');
   const [role, setRole] = useState<RoleView | undefined>();
-  const [page, setPage] = useState(1);
   const [adding, setAdding] = useState(false);
   const [temp, setTemp] = useState<{ username: string; password: string } | null>(null);
   const [form] = Form.useForm<{ username: string; name: string; role: RoleView }>();
-  const { data, isLoading } = useUsers({ q, role, page });
+  const { items, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useUsers({
+    q,
+    role,
+  });
   const create = useCreateUser();
-  const update = useUpdateUser();
+  const changeRole = useChangeRole();
+  const deactivate = useDeactivateUser();
   const reset = useResetPassword();
 
-  const errorText = (e: unknown, fallback: string) => (isApiError(e) ? e.detail : fallback);
+  const errorText = (e: unknown, fallback: string) =>
+    isApiError(e, 'VERSION_CONFLICT')
+      ? '다른 관리자가 먼저 바꿨어요. 목록을 다시 불러왔으니 확인 후 다시 시도하세요.'
+      : isApiError(e)
+        ? e.detail
+        : fallback;
 
   const columns: TableProps<UserView>['columns'] = [
     {
@@ -108,8 +195,8 @@ export function AccountsTab() {
           style={{ width: 100 }}
           disabled={!u.active}
           onChange={(r) =>
-            update.mutate(
-              { id: u.id, role: r },
+            changeRole.mutate(
+              { id: u.id, role: r, version: u.version },
               {
                 onSuccess: () => message.success(`${u.name}님 역할을 ${ROLE_LABEL[r]}로 바꿨어요.`),
                 onError: (e) => message.error(errorText(e, '역할을 바꾸지 못했어요.')),
@@ -142,49 +229,45 @@ export function AccountsTab() {
       key: 'actions',
       width: 210,
       align: 'right',
-      render: (_, u) => (
-        <Space size={4}>
-          <Popconfirm
-            title={`${u.name}님 비밀번호를 초기화할까요?`}
-            description="지금 로그인한 기기에서도 로그아웃돼요."
-            okText="초기화"
-            cancelText="취소"
-            onConfirm={() =>
-              reset.mutate(u.id, {
-                onSuccess: (r) => setTemp({ username: u.username, password: r.temp_password }),
-                onError: (e) => message.error(errorText(e, '초기화하지 못했어요.')),
-              })
-            }
-          >
-            <Button size="small" disabled={!u.active}>
-              비밀번호 초기화
-            </Button>
-          </Popconfirm>
-          <Popconfirm
-            title={
-              u.active ? `${u.name}님 계정을 비활성화할까요?` : `${u.name}님 계정을 다시 쓸까요?`
-            }
-            description={u.active ? '계정은 지우지 않고 이용·확인 기록은 남아요.' : undefined}
-            okText={u.active ? '비활성화' : '다시 쓰기'}
-            okButtonProps={{ danger: u.active }}
-            cancelText="취소"
-            onConfirm={() =>
-              update.mutate(
-                { id: u.id, active: !u.active },
-                {
-                  onSuccess: () =>
-                    message.success(u.active ? '비활성화했어요.' : '다시 쓸 수 있게 했어요.'),
-                  onError: (e) => message.error(errorText(e, '바꾸지 못했어요.')),
-                },
-              )
-            }
-          >
-            <Button size="small" danger={u.active}>
-              {u.active ? '비활성화' : '다시 쓰기'}
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
+      render: (_, u) =>
+        u.active ? (
+          <Space size={4}>
+            <ReasonButton
+              label="비밀번호 초기화"
+              title={`${u.name}님 비밀번호를 초기화할까요?`}
+              description="새 임시 비밀번호를 만들고, 로그인한 기기에서도 로그아웃돼요."
+              okText="초기화"
+              loading={reset.isPending && reset.variables?.id === u.id}
+              onConfirm={(reason) =>
+                reset.mutate(
+                  { id: u.id, reason, version: u.version },
+                  {
+                    onSuccess: (r) =>
+                      setTemp({ username: u.username, password: r.temporary_password }),
+                    onError: (e) => message.error(errorText(e, '초기화하지 못했어요.')),
+                  },
+                )
+              }
+            />
+            <ReasonButton
+              label="비활성화"
+              danger
+              title={`${u.name}님 계정을 비활성화할까요?`}
+              description="되돌릴 수 없어요. 계정은 지우지 않고 이용·확인 기록은 남아요. 진행 중인 사건의 주 담당자는 비활성화할 수 없어요."
+              okText="비활성화"
+              loading={deactivate.isPending && deactivate.variables?.id === u.id}
+              onConfirm={(reason) =>
+                deactivate.mutate(
+                  { id: u.id, reason, version: u.version },
+                  {
+                    onSuccess: () => message.success(`${u.name}님 계정을 비활성화했어요.`),
+                    onError: (e) => message.error(errorText(e, '비활성화하지 못했어요.')),
+                  },
+                )
+              }
+            />
+          </Space>
+        ) : null,
     },
   ];
 
@@ -196,20 +279,14 @@ export function AccountsTab() {
             allowClear
             placeholder="이름·아이디"
             style={{ width: 220 }}
-            onSearch={(v) => {
-              setQ(v.trim());
-              setPage(1);
-            }}
+            onSearch={(v) => setQ(v.trim())}
           />
           <Select<RoleView>
             allowClear
             placeholder="역할"
             style={{ width: 120 }}
             value={role}
-            onChange={(v) => {
-              setRole(v);
-              setPage(1);
-            }}
+            onChange={setRole}
             options={(['admin', 'user'] as const).map((r) => ({ value: r, label: ROLE_LABEL[r] }))}
           />
         </Space>
@@ -221,16 +298,21 @@ export function AccountsTab() {
         size="small"
         rowKey="id"
         columns={columns}
-        dataSource={data?.items}
+        dataSource={items}
         loading={isLoading}
         rowClassName={(u) => (u.active ? '' : 'decision-row-reverted')}
-        pagination={{
-          current: page,
-          pageSize: 20,
-          total: data?.total,
-          onChange: setPage,
-          hideOnSinglePage: true,
-        }}
+        pagination={false}
+        footer={
+          hasNextPage
+            ? () => (
+                <div style={{ textAlign: 'center' }}>
+                  <Button loading={isFetchingNextPage} onClick={() => fetchNextPage()}>
+                    더 보기
+                  </Button>
+                </div>
+              )
+            : undefined
+        }
       />
 
       <Modal
@@ -254,7 +336,7 @@ export function AccountsTab() {
                 onSuccess: (r) => {
                   setAdding(false);
                   form.resetFields();
-                  setTemp({ username: r.user.username, password: r.temp_password });
+                  setTemp({ username: r.user.username, password: r.temporary_password });
                 },
               },
             )

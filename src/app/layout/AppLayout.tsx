@@ -18,7 +18,7 @@ export function AppLayout() {
       <Sidebar
         collapsed={width < COLLAPSE_BREAKPOINT}
         alertCount={unread?.count ?? 0}
-        alertCaseIds={unread?.by_case.filter((x) => x.count > 0).map((x) => x.case_id)}
+        alertCaseIds={unread?.byCase.filter((x) => x.count > 0).map((x) => x.caseId)}
       />
       <Layout.Content
         style={{ height: '100vh', display: 'flex', flexDirection: 'column', minWidth: 0 }}

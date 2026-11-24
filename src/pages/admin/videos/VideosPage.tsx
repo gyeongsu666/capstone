@@ -13,7 +13,7 @@ import {
   type TableProps,
 } from 'antd';
 import { RedoOutlined, UploadOutlined } from '@ant-design/icons';
-import { useRetryVideo, useVideos } from '@/api/admin';
+import { useRetryVideo, useVideoStats, useVideos } from '@/api/admin';
 import { isApiError } from '@/api/client';
 import { useCameras } from '@/api/map';
 import type { AnalysisStatusView, VideoView } from '@/api/view';
@@ -24,9 +24,7 @@ import { PRIMARY, statusColor } from '@/theme';
 import { formatDateTime } from '@/utils/format';
 import { UploadDrawer } from '@/pages/admin/videos/UploadDrawer';
 import { VideoCameraMap } from '@/pages/admin/videos/VideoCameraMap';
-import { statsByCamera } from '@/pages/admin/videos/videoStats';
 
-const PAGE_SIZE = 20;
 /** 선택 상자의 "전체" 항목 값 */
 const ALL = '__all__';
 
@@ -37,11 +35,12 @@ const STATUS_CARDS: { key: AnalysisStatusView; label: string; color: string }[] 
   { key: 'failed', label: '실패', color: statusColor.danger },
 ];
 
-const STATUS_SERVER: Record<AnalysisStatusView, string> = {
-  waiting: 'WAITING',
-  processing: 'PROCESSING',
-  done: 'DONE',
-  failed: 'FAILED',
+const STAGE_LABEL: Record<string, string> = {
+  queued: '대기',
+  preparing: '준비',
+  converting: '변환',
+  analyzing: '분석',
+  saving: '저장',
 };
 
 const fmtDuration = (sec: number | null) => {
@@ -55,37 +54,37 @@ const fmtDuration = (sec: number | null) => {
 export function VideosPage() {
   const { message } = App.useApp();
   const [status, setStatus] = useState<AnalysisStatusView | undefined>();
+  // 지도 노드 id(선택 상자·지도). 목록 조회에는 서버 camera_id로 바꿔 보낸다
   const [cameraId, setCameraId] = useState<string | undefined>();
-  const [page, setPage] = useState(1);
   // 표에서 누른 영상의 카메라(지도에서 강조)
   const [highlight, setHighlight] = useState<{ videoId: string; cameraId: string } | null>(null);
   // 지도에서 고른 카메라로 등록 폼을 열 때 그 카메라 id
   const [uploading, setUploading] = useState<{ cameraId?: string } | null>(null);
   const { data: cameras = [] } = useCameras();
-  const { data, isLoading } = useVideos({
-    status: status ? STATUS_SERVER[status] : undefined,
-    cameraId,
-    page,
-    size: PAGE_SIZE,
-  });
-  const retry = useRetryVideo();
-  // 지도 표시용: 모든 영상(카메라별 상태 집계)
-  const { data: allVideos } = useVideos({ page: 1, size: 100 });
-  const stats = statsByCamera(allVideos?.items ?? []);
   const selectedCamera = cameras.find((c) => c.id === cameraId);
-  const selectedStats = cameraId ? stats[cameraId] : undefined;
-  const selectCamera = (id: string | undefined) => {
-    setCameraId(id);
-    setPage(1);
-  };
+  const serverCameraId = selectedCamera
+    ? (selectedCamera.cameraId ?? selectedCamera.id)
+    : undefined;
+  const { items, isLoading, isFetching, isFetchingNextPage, hasNextPage, fetchNextPage } =
+    useVideos({ status, cameraId: serverCameraId });
+  const retry = useRetryVideo();
+  // 상태 카드·지도: 전체 녹화 영상 현황(R7). 목록 필터와 상관없는 전체 집계
+  const { data: stats } = useVideoStats();
+  const selectedStats = serverCameraId ? stats?.byCamera[serverCameraId] : undefined;
+  const selectCamera = (id: string | undefined) => setCameraId(id);
+  // 표의 영상(camera_id) → 지도 노드 id
+  const nodeIdOf = (camId: string) => cameras.find((c) => (c.cameraId ?? c.id) === camId)?.id;
 
   const columns: TableProps<VideoView>['columns'] = [
     {
-      title: '파일',
-      key: 'file',
+      title: '영상',
+      key: 'video',
       render: (_, v) => (
         <span className="num">
-          {v.fileName} {v.caseId && <Tag>사건 영상</Tag>}
+          {v.label} {v.caseId && <Tag>사건 영상</Tag>}
+          {v.warnings.length > 0 && (
+            <div style={{ fontSize: 12, color: statusColor.pending }}>{v.warnings.join(' · ')}</div>
+          )}
         </span>
       ),
     },
@@ -115,6 +114,11 @@ export function VideosPage() {
         <div>
           <Space>
             <AnalysisStatusBadge status={v.status} progress={v.progress} />
+            {v.status === 'processing' && STAGE_LABEL[v.stage] && (
+              <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
+                {STAGE_LABEL[v.stage]} 단계
+              </span>
+            )}
             {v.status === 'failed' && v.errorMessage && (
               <span style={{ fontSize: 12, color: statusColor.danger }}>{v.errorMessage}</span>
             )}
@@ -138,7 +142,7 @@ export function VideosPage() {
             loading={retry.isPending && retry.variables === v.id}
             onClick={() =>
               retry.mutate(v.id, {
-                onSuccess: () => message.info(`${v.fileName} 재처리를 시작했어요.`),
+                onSuccess: () => message.info(`${v.label} 재처리를 시작했어요.`),
                 onError: (e) => message.error(isApiError(e) ? e.detail : '재처리하지 못했어요.'),
               })
             }
@@ -153,9 +157,7 @@ export function VideosPage() {
     <>
       <PageHeader
         title="영상 등록·분석"
-        summary={
-          data ? `녹화 영상 ${Object.values(data.summary).reduce((a, b) => a + b, 0)}개` : undefined
-        }
+        summary={stats ? `전체 녹화 영상 ${stats.total}개` : undefined}
         extra={
           <Button type="primary" icon={<UploadOutlined />} onClick={() => setUploading({})}>
             영상 등록
@@ -169,15 +171,12 @@ export function VideosPage() {
               <Card
                 size="small"
                 hoverable
-                onClick={() => {
-                  setStatus(status === s.key ? undefined : s.key);
-                  setPage(1);
-                }}
+                onClick={() => setStatus(status === s.key ? undefined : s.key)}
                 style={{ borderColor: status === s.key ? s.color : undefined }}
               >
                 <div style={{ fontSize: 13, color: 'rgba(0,0,0,0.6)' }}>{s.label}</div>
                 <div className="num" style={{ fontSize: 24, fontWeight: 700, color: s.color }}>
-                  {data?.summary[s.key] ?? '—'}
+                  {stats?.byStatus[s.key] ?? '—'}
                 </div>
               </Card>
             </Col>
@@ -193,9 +192,9 @@ export function VideosPage() {
             <div style={{ height: 460 }}>
               <VideoCameraMap
                 cameras={cameras}
-                videos={allVideos?.items ?? []}
+                stats={stats?.byCamera ?? {}}
                 selectedCameraId={cameraId}
-                highlightedCameraId={highlight?.cameraId}
+                highlightedCameraId={highlight ? nodeIdOf(highlight.cameraId) : undefined}
                 onSelect={selectCamera}
               />
             </div>
@@ -205,7 +204,8 @@ export function VideosPage() {
                   <div>
                     <b className="num">{selectedCamera.code}</b> {selectedCamera.name}
                     <div className="num" style={{ fontSize: 12, color: 'rgba(0,0,0,0.6)' }}>
-                      영상 {selectedStats?.total ?? 0}개 · 완료 {selectedStats?.done ?? 0} · 분석 중{' '}
+                      전체 현황 기준 · 영상 {selectedStats?.total ?? 0}개 · 완료{' '}
+                      {selectedStats?.done ?? 0} · 분석 중{' '}
                       {(selectedStats?.processing ?? 0) + (selectedStats?.waiting ?? 0)} · 실패{' '}
                       {selectedStats?.failed ?? 0}
                     </div>
@@ -226,7 +226,8 @@ export function VideosPage() {
                 </Space>
               ) : (
                 <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.6)' }}>
-                  카메라를 누르면 그 카메라 영상만 표에 보여요. 회색은 영상이 없는 카메라예요.
+                  카메라를 누르면 그 카메라 영상만 표에 보여요. 회색은 영상이 없는 카메라예요. 위
+                  숫자와 지도는 전체 녹화 영상 현황이에요.
                 </span>
               )}
             </div>
@@ -252,10 +253,7 @@ export function VideosPage() {
                 <Select
                   style={{ width: 120 }}
                   value={status ?? ALL}
-                  onChange={(v) => {
-                    setStatus(v === ALL ? undefined : (v as AnalysisStatusView));
-                    setPage(1);
-                  }}
+                  onChange={(v) => setStatus(v === ALL ? undefined : (v as AnalysisStatusView))}
                   options={[
                     { value: ALL, label: '전체 상태' },
                     ...STATUS_CARDS.map((s) => ({ value: s.key, label: s.label })),
@@ -267,8 +265,8 @@ export function VideosPage() {
             <Table<VideoView>
               rowKey="id"
               columns={columns}
-              dataSource={data?.items}
-              loading={isLoading}
+              dataSource={items}
+              loading={isLoading || (isFetching && !isFetchingNextPage && !items.length)}
               rowClassName={(v) =>
                 [
                   v.status === 'failed' ? 'video-row-failed' : '',
@@ -285,14 +283,18 @@ export function VideosPage() {
                   ? '사건 영상 카메라는 이 지도에 없어요'
                   : '눌러서 지도에서 카메라 보기',
               })}
-              pagination={{
-                current: page,
-                pageSize: PAGE_SIZE,
-                total: data?.total,
-                onChange: setPage,
-                hideOnSinglePage: true,
-                showSizeChanger: false,
-              }}
+              pagination={false}
+              footer={
+                hasNextPage
+                  ? () => (
+                      <div style={{ textAlign: 'center' }}>
+                        <Button loading={isFetchingNextPage} onClick={() => fetchNextPage()}>
+                          더 보기
+                        </Button>
+                      </div>
+                    )
+                  : undefined
+              }
               locale={{ emptyText: '조건에 맞는 영상이 없어요.' }}
             />
           </Card>

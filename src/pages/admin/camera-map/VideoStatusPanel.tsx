@@ -9,9 +9,10 @@ import { statusColor } from '@/theme';
 export function VideoStatusPanel() {
   const navigate = useNavigate();
   const { message } = App.useApp();
-  const { data } = useVideos({ page: 1, size: 100 });
+  // 실패가 먼저 오는 목록에서 끝나지 않은 것만 앞 5개
+  const { items: all } = useVideos({});
   const retry = useRetryVideo();
-  const items = (data?.items ?? []).filter((v) => v.status !== 'done').slice(0, 5);
+  const items = all.filter((v) => v.status !== 'done').slice(0, 5);
 
   return (
     <Card
@@ -35,7 +36,7 @@ export function VideoStatusPanel() {
                 className="num"
                 style={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis' }}
               >
-                {v.fileName}
+                {v.cameraCode} · {v.label}
               </span>
               <AnalysisStatusBadge status={v.status} progress={v.progress} small />
               {v.status === 'failed' && (
@@ -44,7 +45,7 @@ export function VideoStatusPanel() {
                   loading={retry.isPending && retry.variables === v.id}
                   onClick={() =>
                     retry.mutate(v.id, {
-                      onSuccess: () => message.info(`${v.fileName} 재처리를 시작했어요.`),
+                      onSuccess: () => message.info(`${v.label} 재처리를 시작했어요.`),
                       onError: (e) =>
                         message.error(isApiError(e) ? e.detail : '재처리하지 못했어요.'),
                     })

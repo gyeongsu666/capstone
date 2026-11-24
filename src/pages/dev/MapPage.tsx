@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import { Card } from 'antd';
 import { useCameras, useDangerZones, useWalkEdges } from '@/api/map';
-import { toAreaLevelPolygons, toPriorityZoneView, type RouteMapView } from '@/api/view';
+import { areaView } from '@/api/convert';
+import type { AreaLevelPolygons, PriorityZoneView, RouteMapView } from '@/api/view';
+import type { S } from '@/api/server';
 import { MapFrame } from '@/app/layout/frames';
 import { PageHeader } from '@/app/layout/PageHeader';
 import {
@@ -50,9 +52,17 @@ const route: RouteMapView = {
 };
 
 const areaRaw = searchAreaLevels('C3');
-const levels = (['HIGH', 'MID', 'LOW'] as const).map((level) =>
-  toAreaLevelPolygons({ level, area: areaRaw[level] }),
-);
+const levels: AreaLevelPolygons[] = (
+  [
+    ['HIGH', 'high'],
+    ['MID', 'mid'],
+    ['LOW', 'low'],
+  ] as const
+).map(([key, level]) => ({
+  level,
+  polygons: areaView(areaRaw[key] as S['AreaGeometry']),
+  maxMinutes: 0,
+}));
 const box = (lat: number, lng: number) =>
   toPolygon([
     { lat: lat + 0.0002, lng: lng - 0.0002 },
@@ -76,7 +86,21 @@ const priorityZones = [
     name: '도림제(저수지) 둘레길 입구',
     area: box(RESERVOIR_ENTRANCE.lat, RESERVOIR_ENTRANCE.lng),
   },
-].map(toPriorityZoneView);
+].map((z): PriorityZoneView => {
+  const polygons = areaView(z.area as S['AreaGeometry']);
+  const pts = polygons.flatMap((p) => p[0] ?? []);
+  const n = Math.max(1, pts.length);
+  return {
+    rank: z.rank,
+    name: z.name,
+    reason: '',
+    polygons,
+    center: {
+      lat: pts.reduce((s, p) => s + p.lat, 0) / n,
+      lng: pts.reduce((s, p) => s + p.lng, 0) / n,
+    },
+  };
+});
 
 /** 지도 레이어 확인용(개발 모드에서만 /dev/map) */
 export function MapPage() {

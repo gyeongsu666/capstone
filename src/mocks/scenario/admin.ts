@@ -1,5 +1,5 @@
 // 관리자 데이터: 녹화 영상 15개, 이용 기록 약 20건 (docs/mock-scenario.md "관리자 데이터")
-import type { AuditAction, Video } from '@/api/types';
+import type { AuditAction, Video } from '@/mocks/db/legacyTypes';
 import { atR } from '@/mocks/db/time';
 import type { DbAuditLog } from '@/mocks/db/schema';
 import { cameraId } from '@/mocks/scenario/map';

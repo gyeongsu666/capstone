@@ -1,7 +1,7 @@
 // 지도: 카메라·보조 지점, 도보 그래프, 위험 지역 (openapi.json 모양)
 import { http, HttpResponse } from 'msw';
 import type { S } from '@/api/server';
-import type { Camera, GeoJSONArea, WalkEdge } from '@/api/types';
+import type { Camera, GeoJSONArea, WalkEdge } from '@/mocks/db/legacyTypes';
 import { addAudit, db } from '@/mocks/db';
 import type { DbDangerZone } from '@/mocks/db/schema';
 import { createTask, settleTasks, taskProgress } from '@/mocks/db/tasks';

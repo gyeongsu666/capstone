@@ -61,13 +61,15 @@ export function UploadDrawer({ open, onClose, initialCameraId }: UploadDrawerPro
         onFinish={(v) =>
           upload.mutate(
             {
-              cameraId: v.cameraId,
+              // 폼은 지도 노드 id로 고르고, 서버에는 camera_id로 보낸다
+              cameraId: fixed.find((c) => c.id === v.cameraId)?.cameraId ?? v.cameraId,
               file: v.file,
               recordedAt: v.recordedAt.format('YYYY-MM-DDTHH:mm:ssZ'),
             },
             {
               onSuccess: (r) => {
-                message.success(`${r.video.file_name} 분석을 시작했어요.`);
+                message.success(`영상 #${r.video_id} 분석을 시작했어요.`);
+                r.warnings.forEach((w) => message.warning(w.message));
                 close();
               },
             },

@@ -626,6 +626,7 @@ export function RouteTrackingPage() {
                 children: (
                   <div style={{ height: BOTTOM_HEIGHT - 90, overflow: 'auto' }}>
                     <TimelineTab
+                      caseId={caseId}
                       route={route}
                       pending={!stale && current && !current.outOfFilter ? current : null}
                     />

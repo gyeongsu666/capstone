@@ -1,4 +1,5 @@
-// 옛 임시 타입(처음 프론트 명세 모양). 아직 openapi.json으로 옮기지 않은 영역과 가짜 DB만 쓴다.
+// 가짜 DB(MSW) 안에서만 쓰는 옛 내부 타입. 처음 프론트 명세 모양이며 서버 계약이 아니다.
+// 서버 계약 타입은 src/api/server.ts(openapi.json 생성 타입)를 쓴다.
 // 백엔드 /openapi.json이 나오면 openapi-typescript로 생성한 타입으로 바꾼다.
 
 /** ISO 8601 + 한국 시간. 예: "2026-10-19T15:02:00+09:00" */
@@ -12,11 +13,7 @@ export type CloseReason = 'FOUND' | 'SEARCH_STOPPED' | 'OTHER';
 export type WalkSpeedPreset = 'ADULT' | 'CHILD' | 'ELDERLY';
 export type TaskStatus = 'PENDING' | 'PROGRESS' | 'SUCCESS' | 'FAILURE';
 export type TaskType =
-  | 'VIDEO_ANALYSIS'
-  | 'WALK_ROUTE_CALC'
-  | 'QUERY_EMBEDDING'
-  | 'CANDIDATE_SEARCH'
-  | 'SEARCH_AREA_CALC';
+  'VIDEO_ANALYSIS' | 'WALK_ROUTE_CALC' | 'QUERY_EMBEDDING' | 'CANDIDATE_SEARCH';
 export type VideoStatus = 'WAITING' | 'PROCESSING' | 'DONE' | 'FAILED';
 export type CameraSource = 'FIXED' | 'CASE';
 export type TargetType = 'MISSING' | 'CRIMINAL';

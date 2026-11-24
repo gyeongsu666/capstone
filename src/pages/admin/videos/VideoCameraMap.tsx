@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
 import { CustomOverlayMap } from 'react-kakao-maps-sdk';
-import type { CameraView, VideoView } from '@/api/view';
+import type { CameraVideoStats, CameraView } from '@/api/view';
 import { KakaoMap } from '@/map';
-import { statsByCamera, type CameraVideoStats } from '@/pages/admin/videos/videoStats';
 import { PRIMARY, statusColor } from '@/theme';
 
 /** 마커 모양: 실패 = 빨간 링, 분석 중·대기 = 파란 점선 링, 영상 없음 = 회색 */
@@ -45,7 +44,9 @@ const Legend = () => (
 
 interface VideoCameraMapProps {
   cameras: CameraView[];
-  videos: VideoView[];
+  /** 전체 현황(R7)의 카메라별 상태 수. 키는 서버 camera_id */
+  stats: Record<string, CameraVideoStats>;
+  /** 지도 노드 id */
   selectedCameraId: string | undefined;
   /** 표에서 누른 영상의 카메라: 주황 링으로 깜빡이고 지도 가운데로 옮긴다 */
   highlightedCameraId?: string;
@@ -55,12 +56,11 @@ interface VideoCameraMapProps {
 /** 영상 화면용 지도: 카메라 위치별 영상 상태. 누르면 표가 그 카메라 영상으로 걸러진다 */
 export function VideoCameraMap({
   cameras,
-  videos,
+  stats,
   selectedCameraId,
   highlightedCameraId,
   onSelect,
 }: VideoCameraMapProps) {
-  const stats = useMemo(() => statsByCamera(videos), [videos]);
   const fixed = useMemo(() => cameras.filter((c) => c.source === 'fixed'), [cameras]);
   // 카메라들의 가운데를 중심으로 가깝게(마커가 겹치지 않게)
   const center = useMemo(() => {
@@ -74,7 +74,7 @@ export function VideoCameraMap({
   return (
     <KakaoMap center={highlighted?.location ?? center} level={4} bottomLeft={<Legend />}>
       {fixed.map((c) => {
-        const s = stats[c.id];
+        const s = stats[c.cameraId ?? c.id];
         const m = markerStyle(s);
         const selected = c.id === selectedCameraId;
         const lit = c.id === highlightedCameraId;

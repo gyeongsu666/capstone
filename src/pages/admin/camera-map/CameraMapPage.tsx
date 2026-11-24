@@ -3,7 +3,7 @@ import { App, Button } from 'antd';
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { CustomOverlayMap, Polygon, Polyline } from 'react-kakao-maps-sdk';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRecalculateWalkEdges } from '@/api/admin';
+import { useRecalculateWalkEdges, useVideoStats } from '@/api/admin';
 import { isApiError } from '@/api/client';
 import { useTaskPolling } from '@/api/common';
 import { useCameras, useDangerZones, useWalkEdges } from '@/api/map';
@@ -42,7 +42,17 @@ type CameraEdit = { mode: 'none' } | { mode: 'new' } | { mode: 'edit'; camera: C
 export function CameraMapPage() {
   const { message } = App.useApp();
   const qc = useQueryClient();
-  const { data: cameras = [] } = useCameras();
+  const { data: rawCameras = [] } = useCameras();
+  // 서버 카메라에는 영상 정보가 없어서 전체 영상 현황(R7)으로 "분석 전(회색)"과 영상 수를 채운다
+  const { data: videoStats } = useVideoStats();
+  const cameras = useMemo(
+    () =>
+      rawCameras.map((c) => {
+        const s = videoStats?.byCamera[c.cameraId ?? c.id];
+        return videoStats ? { ...c, analyzed: (s?.done ?? 0) > 0, videoCount: s?.total ?? 0 } : c;
+      }),
+    [rawCameras, videoStats],
+  );
   const { data: zones = [] } = useDangerZones();
   const { data: edges = [] } = useWalkEdges();
   const { layers, toggle } = useLayerToggle<LayerKey>({ camera: true, danger: true, edges: true });

@@ -1,5 +1,5 @@
 // 가짜 지도 데이터용 좌표 계산. 실제 서버는 도로망으로 계산한다.
-import type { GeoJSONPolygon, LatLng } from '@/api/types';
+import type { GeoJSONPolygon, LatLng } from '@/mocks/db/legacyTypes';
 
 const R = 6371000;
 const rad = (d: number) => (d * Math.PI) / 180;

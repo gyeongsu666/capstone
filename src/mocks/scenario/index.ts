@@ -154,7 +154,17 @@ export function createScenario(r: number = Date.now()): DbState {
       version: 1,
       updated_at: t(-7 * DAY),
     },
-    retention: { closed_case_days: 30, raw_video_days: 90 },
+    // 보관 기간(임시값). 자동 삭제는 하지 않는다(D02)
+    retention: {
+      video_retention_days: 90,
+      closed_case_retention_days: 30,
+      alert_retention_days: 90,
+      audit_retention_days: 365,
+      deletion_mode: 'manual_approval_required',
+      automatic_deletion_enabled: false,
+      version: 1,
+      updated_at: new Date(t(-7 * DAY)).toISOString(),
+    },
     audit_logs: createAuditLogs(r, USER_IDS, CASE_IDS),
     cameras: createCameras(CASE_IDS.main),
     danger_zones: createDangerZones(),
@@ -180,7 +190,6 @@ export function createScenario(r: number = Date.now()): DbState {
     scenes: main.scenes,
     candidates: main.candidates,
     decisions: main.decisions,
-    search_area_at: {},
     watches: {},
     alerts: [],
     // 메인 사건: C3 확정 기준으로 이미 끝난 검색 하나(새로고침하면 latest_search로 복원)

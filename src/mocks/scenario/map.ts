@@ -1,6 +1,6 @@
 // 가짜 지도 데이터: 국립목포대학교 도림캠퍼스(무안군 청계면) 실제 건물 앞에 카메라를 둔다.
 // 건물 좌표는 카카오 장소 검색 결과(2026-11-16). 카메라 방향·화각·도보 구간은 임시값이다.
-import type { Camera, LatLng, WalkEdge } from '@/api/types';
+import type { Camera, LatLng, WalkEdge } from '@/mocks/db/legacyTypes';
 import type { DbDangerZone } from '@/mocks/db/schema';
 import { offset } from '@/map/geo';
 import { crossArea, distanceM, toPolygon } from '@/mocks/scenario/geometry';
@@ -178,7 +178,11 @@ export const routePathFor = (codes: string[]) => codes.map(cameraPos);
 
 /** 마지막 목격 카메라 기준 현재 위치 범위 3단계(길을 따라 퍼진 십자 모양, 동심원 아님) */
 export function searchAreaLevels(baseCode: string) {
-  const c = cameraPos(baseCode);
+  return searchAreaLevelsAt(cameraPos(baseCode));
+}
+
+/** 기준 위치(마지막 목격) 둘레 현재 위치 범위 3단계 */
+export function searchAreaLevelsAt(c: LatLng) {
   const hw = 0.00014;
   return {
     HIGH: crossArea(c, { n: 0.0007, e: 0.0009, s: 0.0007, w: 0.0009 }, hw * 1.6),

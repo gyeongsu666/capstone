@@ -50,6 +50,19 @@ export function LiveAlertCard({ alert: a, onRespond, responding, onPlay }: LiveA
           }}
         />
         실시간 출현 알림
+        <span
+          style={{
+            marginLeft: 'auto',
+            fontSize: 12,
+            padding: '0 6px',
+            borderRadius: 4,
+            border: `1px solid ${statusColor.danger}`,
+            background: a.level === 'high' ? statusColor.danger : '#fff',
+            color: a.level === 'high' ? '#fff' : statusColor.danger,
+          }}
+        >
+          {a.level === 'high' ? '높음' : '중간'}
+        </span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12 }}>
         <button

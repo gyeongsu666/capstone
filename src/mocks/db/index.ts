@@ -1,14 +1,7 @@
 // 가짜 DB: 메모리 + localStorage. 새로고침해도 유지된다.
-import type { Case, User, UserBrief } from '@/api/types';
 import type { ServerUser } from '@/api/server';
 import { createScenario } from '@/mocks/scenario';
-import {
-  DB_VERSION,
-  type DbCase,
-  type DbSession,
-  type DbState,
-  type DbUser,
-} from '@/mocks/db/schema';
+import { DB_VERSION, type DbSession, type DbState, type DbUser } from '@/mocks/db/schema';
 import { nowKst } from '@/mocks/db/time';
 
 const STORAGE_KEY = 'refind-mock-db';
@@ -57,41 +50,6 @@ export const findUser = (id: string) => state.users.find((u) => u.id === id);
 export const findUserByUsername = (username: string) =>
   state.users.find((u) => u.username === username);
 export const findCase = (id: string) => state.cases.find((c) => c.id === id);
-
-export function toUser(u: DbUser): User {
-  return {
-    id: u.id,
-    username: u.username,
-    name: u.name,
-    role: u.role,
-    active: u.active,
-    must_change_password: u.must_change_password,
-    created_at: u.created_at,
-  };
-}
-
-export function toUserBrief(id: string): UserBrief {
-  const u = findUser(id);
-  return { id, name: u?.name ?? '(알 수 없음)' };
-}
-
-export function toCase(c: DbCase): Case {
-  return {
-    id: c.id,
-    case_no: c.case_no,
-    status: c.status,
-    missing_person: c.missing_person,
-    missing_at: c.missing_at,
-    last_seen_place: c.last_seen_place,
-    walk_speed_preset: c.walk_speed_preset,
-    created_by: toUserBrief(c.created_by),
-    members: c.member_ids.map(toUserBrief),
-    created_at: c.created_at,
-    closed_at: c.closed_at,
-    close_reason: c.close_reason,
-    summary: c.summary,
-  };
-}
 
 /** 내부 문자열 id → 서버 모양의 10진수 문자열 id(bigserial). 처음 부를 때 정해진다 */
 export function pubId(internal: string): string {
@@ -148,6 +106,6 @@ export function toServerUser(u: DbUser): ServerUser {
     must_change_password: u.must_change_password,
     created_at: u.created_at,
     updated_at: u.created_at,
-    version: 1,
+    version: u.version ?? 1,
   };
 }

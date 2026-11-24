@@ -6,22 +6,13 @@ import type {
   ServerCasePage,
   ServerCasePatch,
 } from '@/api/server';
-import type {
-  Camera,
-  CaseVideo,
-  CaseVideoAccepted,
-  CloseReason,
-  Page,
-  Video,
-  WalkSpeedPreset,
-} from '@/api/types';
-import { addAudit, db, findUser, newId } from '@/mocks/db';
+import type { CloseReason, WalkSpeedPreset } from '@/mocks/db/legacyTypes';
+import { addAudit, db, findUser } from '@/mocks/db';
 import { caseTitle, toServerAssignees, toServerCase } from '@/mocks/db/cases';
 import type { DbCase, DbUser } from '@/mocks/db/schema';
 import { ensureQuery } from '@/mocks/db/tracking';
 import { stopWatchOnClose } from '@/mocks/handlers/search';
 import { nowKst } from '@/mocks/db/time';
-import { createTask, settleTasks } from '@/mocks/db/tasks';
 import {
   cursorPage,
   MockError,
@@ -59,15 +50,6 @@ function requireOwnerOrAdmin(user: DbUser, c: DbCase) {
   if (user.role !== 'ADMIN' && c.created_by !== user.id)
     throw new MockError(403, 'FORBIDDEN', '주 담당자나 관리자만 담당자를 바꿀 수 있어요.');
 }
-
-/** ?page=1&size=20 → Page<T> */
-export function paginate<T>(items: T[], url: URL): Page<T> {
-  const page = Math.max(1, Number(url.searchParams.get('page') ?? 1) || 1);
-  const size = Math.min(100, Math.max(1, Number(url.searchParams.get('size') ?? 20) || 20));
-  return { items: items.slice((page - 1) * size, page * size), total: items.length, page, size };
-}
-
-const MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024;
 
 export const caseHandlers = [
   // 사건 목록 · 사용자(맡은 사건만, 관리자는 전체) · SYS02-001
@@ -300,94 +282,6 @@ export const caseHandlers = [
         case_id: Number(c.id),
         items: toServerAssignees(c),
       });
-    }),
-  ),
-
-  // 사건 영상 목록 · 사용자 · SYS02-009
-  http.get(
-    '/api/cases/:caseId/videos',
-    withMock(({ request, params }) => {
-      const user = requireUser(request);
-      const c = requireCaseAccess(user, String(params.caseId));
-      settleTasks();
-      const list = db.state.videos
-        .filter((v) => v.case_id === c.id)
-        .map((video) => ({
-          video,
-          camera: db.state.cameras.find((cam) => cam.id === video.camera_id)!,
-        }))
-        .filter((x) => x.camera);
-      return HttpResponse.json<CaseVideo[]>(list);
-    }),
-  ),
-
-  // 사건 영상 추가(사설 CCTV, 블랙박스 등) · 사용자(맡은 사건만) · SYS02-009
-  http.post(
-    '/api/cases/:caseId/videos',
-    withMock(async ({ request, params }) => {
-      const user = requireUser(request);
-      const c = requireCaseAccess(user, String(params.caseId));
-      requireOpenCase(c);
-      const form = await request.formData();
-      const file = form.get('file');
-      const name = String(form.get('name') ?? '').trim();
-      const lat = Number(form.get('lat'));
-      const lng = Number(form.get('lng'));
-      const direction = Number(form.get('direction_deg'));
-      const fov = form.get('fov_deg') ? Number(form.get('fov_deg')) : 90;
-      const recordedAt = String(form.get('recorded_at') ?? '');
-
-      if (!(file instanceof File)) return validationError('file');
-      if (!name) return validationError('name');
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return validationError('lat');
-      if (!Number.isFinite(direction)) return validationError('direction_deg');
-      if (!recordedAt) return validationError('recorded_at');
-      if (file.size > MAX_VIDEO_BYTES)
-        throw new MockError(413, 'FILE_TOO_LARGE', '영상은 2GB까지 올릴 수 있어요.');
-      if (file.type && !file.type.startsWith('video/'))
-        throw new MockError(415, 'UNSUPPORTED_FILE', '영상 파일만 올릴 수 있어요.');
-
-      const count = db.state.cameras.filter((x) => x.case_id === c.id).length;
-      const camera: Camera = {
-        id: newId('cam'),
-        code: `P${count + 1}`,
-        name,
-        location: { lat, lng },
-        direction_deg: ((direction % 360) + 360) % 360,
-        fov_deg: fov,
-        source: 'CASE',
-        case_id: c.id,
-        video_count: 1,
-        analyzed: false,
-      };
-      const video: Video = {
-        id: newId('video'),
-        camera_id: camera.id,
-        camera_code: camera.code,
-        file_name: file.name,
-        recorded_at: recordedAt,
-        duration_sec: null,
-        status: 'WAITING',
-        progress: 0,
-        error_message: null,
-        task_id: null,
-        case_id: c.id,
-        uploaded_at: nowKst(),
-      };
-      const task = createTask('VIDEO_ANALYSIS', {
-        kind: 'video_done',
-        video_id: video.id,
-        camera_id: camera.id,
-      });
-      video.task_id = task.task_id;
-      db.state.cameras.push(camera);
-      db.state.videos.push(video);
-      addAudit(user.id, 'VIDEO_UPLOAD', `사건 영상 추가 ${camera.code} ${name}`, c.id);
-      db.save();
-      return HttpResponse.json<CaseVideoAccepted>(
-        { video, camera, task_id: task.task_id },
-        { status: 202 },
-      );
     }),
   ),
 ];

@@ -155,7 +155,7 @@ export function CameraPanel({
         <Form.Item name="fovDeg" label="화각">
           <InputNumber min={10} max={180} suffix="°" style={{ width: 110 }} />
         </Form.Item>
-        {!isNew && <CameraVideos cameraId={camera.id} />}
+        {!isNew && <CameraVideos cameraId={camera.cameraId ?? camera.id} />}
         {error && (
           <Alert
             type="error"

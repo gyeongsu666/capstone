@@ -1,14 +1,16 @@
 import { Button, List } from 'antd';
 import { useNavigate } from 'react-router-dom';
-import { useVideos } from '@/api/admin';
+import { useVideoStats, useVideos } from '@/api/admin';
 import { AnalysisStatusBadge } from '@/components/StatusBadge';
 import { formatDateTime } from '@/utils/format';
 
 /** 선택한 카메라의 녹화 영상(녹화 시각·상태) */
 export function CameraVideos({ cameraId }: { cameraId: string }) {
   const navigate = useNavigate();
-  const { data, isLoading } = useVideos({ cameraId, page: 1, size: 5 });
-  const total = data?.total ?? 0;
+  // cameraId는 서버 camera_id. 개수는 전체 현황(R7)에서, 목록은 최근 몇 개만
+  const { items, isLoading } = useVideos({ cameraId });
+  const { data: stats } = useVideoStats();
+  const total = stats?.byCamera[cameraId]?.total ?? 0;
 
   return (
     <div style={{ marginBottom: 12 }}>
@@ -22,12 +24,12 @@ export function CameraVideos({ cameraId }: { cameraId: string }) {
         size="small"
         bordered
         loading={isLoading}
-        dataSource={data?.items}
+        dataSource={items.slice(0, 5)}
         locale={{ emptyText: '등록된 영상이 없어요.' }}
         renderItem={(v) => (
           <List.Item extra={<AnalysisStatusBadge status={v.status} progress={v.progress} small />}>
             <span className="num" style={{ fontSize: 12 }}>
-              녹화 {formatDateTime(v.recordedAt)} · {v.fileName}
+              녹화 {formatDateTime(v.recordedAt)} · {v.label}
             </span>
           </List.Item>
         )}

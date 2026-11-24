@@ -57,7 +57,7 @@ async function toImageUrl(file: File) {
 }
 
 /** 정적 파일(가짜 썸네일·영상)을 인증된 파일 API처럼 돌려준다 */
-async function serveStatic(url: string, request: Request) {
+export async function serveStatic(url: string, request: Request) {
   const headers: Record<string, string> = {};
   const range = request.headers.get('Range');
   if (range) headers.Range = range;
@@ -464,6 +464,16 @@ export const trackingHandlers = [
         : [];
       target.reverted = true;
       target.version = (target.version ?? 1) + 1;
+      // 출현 알림에서 나온 판단이면 알림을 다시 대기로(openapi.json DecisionReverseResponse)
+      if (target.alert_id) {
+        const alert = db.state.alerts.find((x) => x.id === target.alert_id);
+        if (alert) {
+          alert.status = 'NEW';
+          alert.responded_by = null;
+          alert.decision_id = null;
+          alert.version = (alert.version ?? 1) + 1;
+        }
+      }
       db.state.decisions.unshift({
         id: newId('rev'),
         case_id: c.id,
@@ -517,7 +527,37 @@ export const trackingHandlers = [
     withMock(({ request, params }) => {
       const user = requireUser(request);
       const c = requireCaseAccess(user, String(params.caseId));
-      const [kind, tid] = String(params.sceneId).split(':');
+      const [kind, id] = String(params.sceneId).split(':');
+      const tid = id;
+      if (kind === 'alert') {
+        const alert = db.state.alerts.find((x) => x.case_id === c.id && pubId(x.id) === id);
+        const sc = alert && findScene(alert.scene_id);
+        if (!alert || !sc) throw new MockError(404, 'RESOURCE_NOT_FOUND', '장면을 찾을 수 없어요.');
+        addAudit(user.id, 'VIDEO_VIEW', `${sc.camera_code} 출현 장면 열람`, c.id);
+        db.save();
+        const scene: S['RouteScene'] = {
+          scene_id: `alert:${id}`,
+          decision_id: alert.decision_id ? pubId(alert.decision_id) : '0',
+          source_type: 'alert',
+          tracklet_id: null,
+          alert_id: id,
+          camera_id: Number(sc.camera_id),
+          camera_name: toServerTracklet(sc).camera_name,
+          location: { type: 'Point', coordinates: [0, 0] },
+          observed_start_at: new Date(sc.start_at).toISOString(),
+          observed_end_at: new Date(sc.end_at).toISOString(),
+          thumbnail_url: `/api/cases/${c.id}/alerts/${id}/snapshot`,
+        };
+        const cam = db.state.cameras.find((x) => x.id === sc.camera_id);
+        if (cam)
+          scene.location = { type: 'Point', coordinates: [cam.location.lng, cam.location.lat] };
+        return HttpResponse.json<S['CaseScene']>({
+          scene,
+          media: toServerMedia(sc),
+          trajectory: trajectoryOf(sc),
+          media_unavailable_reason: null,
+        });
+      }
       if (kind !== 'tracklet' || !tid)
         throw new MockError(404, 'RESOURCE_NOT_FOUND', '장면을 찾을 수 없어요.');
       const { scene, cand } = caseScene(c, tid);

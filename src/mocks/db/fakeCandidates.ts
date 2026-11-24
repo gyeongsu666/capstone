@@ -1,5 +1,5 @@
 // 시연용: "다시 검색"이 끝날 때 지금 기준점 뒤에 새 가짜 후보를 만든다(개발 패널에서 켜고 끔)
-import type { Reason } from '@/api/types';
+import type { Reason } from '@/mocks/db/legacyTypes';
 import { db, findCase, newId } from '@/mocks/db';
 import type { DbCandidate } from '@/mocks/db/schema';
 import { currentAnchor, findScene } from '@/mocks/db/tracking';

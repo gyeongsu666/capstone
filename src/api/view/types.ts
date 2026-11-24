@@ -1,5 +1,5 @@
-// 화면용 타입. 컴포넌트는 서버 타입(src/api/types.ts) 대신 이 타입만 받는다.
-// 서버 명세가 바뀌면 src/api/view의 변환 함수(serverMappers.ts)만 고친다.
+// 화면용 타입. 컴포넌트는 서버 타입(src/api/server.ts) 대신 이 타입만 받는다.
+// 서버 명세가 바뀌면 src/api/view/serverMappers.ts(변환 함수)만 고친다.
 // 필드는 camelCase, 시각은 ISO 문자열, 시간은 분/초를 이름에 밝힌다.
 
 export interface BoxView {
@@ -101,7 +101,13 @@ export type AlertStatusView = 'new' | 'confirmed' | 'dismissed';
 
 export interface AlertView {
   id: string;
+  /** 서버 camera_id(지도 위치 찾기용) */
+  cameraId: string;
   cameraCode: string;
+  /** high = 출현 알림 높음 기준 이상, mid = 사건 유사도 기준 이상 */
+  level: 'high' | 'mid';
+  /** 판단할 때 expected_version */
+  version: number;
   /** 알림이 생긴 시각 */
   createdAt: string;
   /** 사람이 찍힌 시각 */
@@ -110,8 +116,8 @@ export interface AlertView {
   similarity: number;
   status: AlertStatusView;
   respondedByName: string | null;
-  /** 재생할 장면(녹화가 없으면 null) */
-  scene: SceneView | null;
+  /** 재생할 장면 id(alert:{id}). 재생 정보는 장면 상세에서 받는다 */
+  sceneId: string;
 }
 
 /** 사이드바 사건 카드 */
@@ -213,6 +219,8 @@ export type AreaLevelView = 'high' | 'mid' | 'low';
 export interface AreaLevelPolygons {
   level: AreaLevelView;
   polygons: PolygonView[];
+  /** 이 단계까지 갈 수 있는 최대 이동 시간(분) */
+  maxMinutes: number;
 }
 
 export interface PriorityZoneView {
@@ -268,14 +276,6 @@ export interface CaseView {
   version: number;
 }
 
-/** 목록 한 페이지 */
-export interface PageView<T> {
-  items: T[];
-  total: number;
-  page: number;
-  size: number;
-}
-
 export type TaskStatusView = 'pending' | 'running' | 'done' | 'failed';
 
 export type TaskStageView =
@@ -291,18 +291,6 @@ export interface TaskView {
   result: Record<string, unknown> | null;
 }
 
-export interface CaseVideoView {
-  id: string;
-  fileName: string;
-  cameraCode: string;
-  cameraName: string;
-  recordedAt: string;
-  status: AnalysisStatusView;
-  progress: number;
-  errorMessage: string | null;
-  taskId: string | null;
-}
-
 /** 시스템 설정 중 화면에 필요한 값. 관리자가 아직 안 정한 값은 null(D03) */
 export interface SettingsView {
   walkSpeedMps: Record<WalkSpeedPresetView, number | null>;
@@ -311,13 +299,6 @@ export interface SettingsView {
 }
 
 // ---------- 동선 추적 ----------
-
-export interface QueryImageView {
-  id: string;
-  url: string;
-  /** 특징 추출 완료 */
-  ready: boolean;
-}
 
 /** 기준 대상(사진 한 장 또는 트랙렛 하나) + 검색 조건(질의 바) */
 export interface QueryView {
@@ -378,43 +359,84 @@ export interface RouteView {
 
 // ---------- 현재 위치 수색·실시간 감시 ----------
 
+/** 현재 위치 범위(조회할 때 서버가 as_of 기준으로 계산) */
 export interface SearchAreaView {
-  computedAt: string;
-  baseScene: SceneView;
-  /** 계산 시점 기준 경과(분) */
+  /** 계산 기준 시각 */
+  asOf: string;
+  calculatedAt: string;
+  /** 기준: 마지막 확정 장면(basisDecisionId), 없으면 사건의 마지막 목격 위치·시각 */
+  basisDecisionId: string | null;
+  basisLocation: LatLngView;
+  basisObservedAt: string;
+  /** as_of − 기준 시각(분, 0 이상) */
   elapsedMinutes: number;
+  walkingSpeedMps: number;
   levels: AreaLevelPolygons[];
-  dangerOverlaps: { zoneId: string; name: string; level: AreaLevelView }[];
+  dangerOverlaps: {
+    zoneId: string;
+    name: string;
+    severity: SeverityView;
+    level: AreaLevelView;
+  }[];
   priorityZones: PriorityZoneView[];
+  warnings: { code: string; message: string }[];
 }
 
+export type WatchStatusView =
+  'starting' | 'watching' | 'degraded' | 'stopped' | 'blocked' | 'unknown';
+export type WatchCameraStatusView =
+  'starting' | 'watching' | 'reconnecting' | 'stopped' | 'failed' | 'unknown';
+
 export interface WatchView {
-  on: boolean;
-  startedAt: string | null;
-  startedByName: string | null;
-  cameraCount: number;
+  enabled: boolean;
+  status: WatchStatusView;
+  cameras: { cameraId: string; status: WatchCameraStatusView; reason: string | null }[];
+  /** 정상 감시 중인 카메라 수 */
+  watchingCount: number;
+  updatedAt: string;
 }
 
 // ---------- 관리자 ----------
 
 export interface VideoView {
   id: string;
-  fileName: string;
+  /** 표시 이름. 서버에 파일 이름이 없어서 "영상 #ID"(요청서 3.7) */
+  label: string;
+  /** 서버 camera_id */
   cameraId: string;
   cameraCode: string;
+  cameraName: string;
   recordedAt: string;
   durationSec: number | null;
   status: AnalysisStatusView;
+  /** 분석 단계(대기 → 준비 → 변환 → 분석 → 저장) */
+  stage: TaskStageView;
   progress: number;
   errorMessage: string | null;
   taskId: string | null;
   /** 사건 영상이면 사건 id */
   caseId: string | null;
   uploadedAt: string;
+  trackletCount: number;
+  warnings: string[];
 }
 
-export interface VideoPageView extends PageView<VideoView> {
-  summary: Record<AnalysisStatusView, number>;
+/** 카메라별 영상 상태 수 */
+export interface CameraVideoStats {
+  total: number;
+  done: number;
+  processing: number;
+  waiting: number;
+  failed: number;
+}
+
+/** 전역 녹화 영상 전체 현황(R7). 목록 필터와 무관한 전체 집계 */
+export interface VideoStatsView {
+  total: number;
+  byStatus: Record<AnalysisStatusView, number>;
+  /** 서버 camera_id → 상태 수(영상 없는 카메라는 없음) */
+  byCamera: Record<string, CameraVideoStats>;
+  asOf: string;
 }
 
 export type RoleView = 'admin' | 'user';
@@ -427,40 +449,46 @@ export interface UserView {
   active: boolean;
   mustChangePassword: boolean;
   createdAt: string;
+  /** 역할 변경·비활성화·초기화할 때 expected_version */
+  version: number;
 }
 
-export type AuditActionView =
-  | 'login'
-  | 'search'
-  | 'decision'
-  | 'revert'
-  | 'video_view'
-  | 'video_upload'
-  | 'case_create'
-  | 'case_close'
-  | 'account_change'
-  | 'settings_change'
-  | 'data_delete';
-
+/** 이용 기록 한 줄. 서버 기록에는 설명 문장이 없고, 무엇(자원)을 했는지와 바뀐 필드만 있다 */
 export interface AuditLogView {
   id: string;
   at: string;
   userName: string;
-  action: AuditActionView;
-  caseNo: string | null;
-  detail: string;
+  /** 서버 action 문자열(알려진 값이면 라벨을 붙인다) */
+  action: string;
+  caseId: string | null;
+  /** 대상 자원. 예: "case 31" */
+  target: string;
+  result: 'success' | 'failure';
+  changedFields: string[];
 }
 
+/** 데이터 보관 기간(일). null = 정하지 않음(만료 계산 없음) */
 export interface RetentionView {
-  closedCaseDays: number;
-  rawVideoDays: number;
+  videoDays: number | null;
+  closedCaseDays: number | null;
+  alertDays: number | null;
+  auditDays: number | null;
+  /** 이번 범위에서는 늘 false(자동 삭제 안 함, D02) */
+  automaticDeletion: boolean;
+  version: number;
+  updatedAt: string;
 }
 
-export interface PendingDeletionView {
-  kind: 'case' | 'video';
+/** 삭제 예정·보호 대상 */
+export interface DeletionCandidateView {
+  kind: 'video' | 'closed_case' | 'alert' | 'audit_log';
   id: string;
-  label: string;
-  deleteAt: string;
+  retainUntil: string;
+  /** 지금 지울 수 있는지(참조·보류가 없으면 true) */
+  eligible: boolean;
+  blockedReasons: string[];
+  referencedCaseIds: string[];
+  estimatedBytes: number;
 }
 
 export type PersonTypeView = 'adult' | 'child' | 'elderly' | 'other';

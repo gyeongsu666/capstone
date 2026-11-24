@@ -1,6 +1,6 @@
 // 메인 사건(2026-031) 동선 추적 데이터: docs/mock-scenario.md "메인 사건 흐름"
 // 실제 동선 C1 → C2 → C3 → C4 → C6. 시각은 모두 R 기준.
-import type { Reason, Scene } from '@/api/types';
+import type { Reason, Scene } from '@/mocks/db/legacyTypes';
 import { atR } from '@/mocks/db/time';
 import type { DbCandidate, DbCandidateVariant, DbDecision, DbQuery } from '@/mocks/db/schema';
 import { cameraId } from '@/mocks/scenario/map';

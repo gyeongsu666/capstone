@@ -124,7 +124,7 @@ export function ComponentsPage() {
                 <LiveAlertCard
                   alert={alertNew}
                   onRespond={(k) => message.info(`알림 응답: ${k}`)}
-                  onPlay={() => alertNew.scene && setModalScene(alertNew.scene)}
+                  onPlay={() => setModalScene(scene('C10', '16:01'))}
                 />
                 <LiveAlertCard alert={alertAnswered} />
               </Space>

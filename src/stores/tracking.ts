@@ -17,8 +17,6 @@ interface TrackingState {
    * 공동 담당자가 새 검색을 만들어도 판단 중인 화면을 바로 바꾸지 않는다.
    */
   searchId: Record<string, string | null>;
-  /** 이번에 후보 검색을 끝낸 사건(검색했는데 후보가 없는 경우 안내용) */
-  searchedCases: string[];
   /** 사건별 진행 중인 기준 사진 특징 추출 작업 */
   embedTask: Record<string, string | null>;
   setMode: (mode: TrackingMode) => void;
@@ -27,7 +25,6 @@ interface TrackingState {
   addMyDecided: (candidateId: string) => void;
   setSearchId: (caseId: string, searchId: string | null) => void;
   setEmbedTask: (caseId: string, taskId: string | null) => void;
-  markSearched: (caseId: string) => void;
 }
 
 /** 동선 추적 화면 상태 */
@@ -38,7 +35,6 @@ export const useTrackingStore = create<TrackingState>((set) => ({
   myDecidedIds: [],
   searchId: {},
   embedTask: {},
-  searchedCases: [],
   setMode: (mode) => set({ mode }),
   select: (selectedCandidateId) => set({ selectedCandidateId }),
   setFocused: (focused) => set({ focused }),
@@ -47,10 +43,4 @@ export const useTrackingStore = create<TrackingState>((set) => ({
     set((s) => ({ searchId: { ...s.searchId, [caseId]: searchId } })),
   setEmbedTask: (caseId, taskId) =>
     set((s) => ({ embedTask: { ...s.embedTask, [caseId]: taskId } })),
-  markSearched: (caseId) =>
-    set((s) => ({
-      searchedCases: s.searchedCases.includes(caseId)
-        ? s.searchedCases
-        : [...s.searchedCases, caseId],
-    })),
 }));

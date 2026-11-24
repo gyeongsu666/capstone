@@ -1,5 +1,4 @@
-// 백엔드 openapi.json 모양 → 화면용 타입. 영역별로 옮기는 중이며, 옮긴 영역은 이 파일을 쓴다.
-// (아직 옮기지 않은 영역은 mappers.ts: 처음 프론트 명세 모양)
+// 백엔드 openapi.json 모양 → 화면용 타입. 서버 모양이 바뀌면 이 파일만 고친다.
 import {
   areaView,
   idView,
@@ -8,22 +7,40 @@ import {
   pointView,
   secondsToMinutes,
 } from '@/api/convert';
-import type { S, ServerCase, ServerSystemSettings } from '@/api/server';
+import type {
+  S,
+  ServerCase,
+  ServerSystemSettings,
+  ServerVideoStats,
+  VideoStatusCounts,
+} from '@/api/server';
 import { closeReasonLabel, walkSpeedViewLabel } from '@/utils/format';
 import type {
+  AlertView,
+  AuditLogView,
+  DeletionCandidateView,
+  RetentionView,
+  CameraVideoStats,
+  AreaLevelView,
   CameraView,
   CandidateView,
   CaseCardView,
   CaseView,
   DecisionView,
   LatLngView,
+  PolygonView,
   QueryView,
   QueueView,
   ReasonView,
   RouteView,
   SceneView,
+  SearchAreaView,
   SearchRunView,
   TrackPointView,
+  UserView,
+  VideoStatsView,
+  VideoView,
+  WatchView,
   DangerZoneView,
   PersonTypeView,
   PersonView,
@@ -34,6 +51,27 @@ import type {
 } from '@/api/view/types';
 
 // ---------- 공통 ----------
+
+export const fromServerUser = (u: S['User']): UserView => ({
+  id: idView(u.user_id),
+  username: u.username,
+  name: u.display_name,
+  role: u.role,
+  active: u.active,
+  mustChangePassword: u.must_change_password,
+  createdAt: u.created_at,
+  version: u.version,
+});
+
+/** 다각형들의 대략적인 가운데(라벨 위치용) */
+export function polygonsCenter(polygons: PolygonView[]): LatLngView {
+  const pts = polygons.flatMap((p) => p[0] ?? []);
+  const n = Math.max(1, pts.length);
+  return {
+    lat: pts.reduce((s, p) => s + p.lat, 0) / n,
+    lng: pts.reduce((s, p) => s + p.lng, 0) / n,
+  };
+}
 
 export const fromServerUserSummary = (u: S['UserSummary']): PersonView => ({
   id: idView(u.user_id),
@@ -463,3 +501,172 @@ export function toQueryView(c: ServerCase, thresholdDefault: number | null): Que
     conditionsVersion: c.search_conditions.version,
   };
 }
+
+// ---------- 현재 위치·감시·알림 ----------
+
+const AREA_LEVEL: Record<number, AreaLevelView> = { 1: 'high', 2: 'mid', 3: 'low' };
+
+/** 다각형들의 대략적인 가운데(번호 표시 위치) */
+function centerOf(polygons: PolygonView[]): LatLngView {
+  const pts = polygons.flatMap((p) => p[0] ?? []);
+  const n = Math.max(1, pts.length);
+  return {
+    lat: pts.reduce((s, p) => s + p.lat, 0) / n,
+    lng: pts.reduce((s, p) => s + p.lng, 0) / n,
+  };
+}
+
+export function fromServerSearchArea(a: S['SearchArea']): SearchAreaView {
+  const asOfMs = new Date(a.as_of).getTime();
+  const basisMs = new Date(a.basis_observed_at).getTime();
+  return {
+    asOf: a.as_of,
+    calculatedAt: a.calculated_at,
+    basisDecisionId: a.basis_decision_id,
+    basisLocation: pointView(a.basis_location),
+    basisObservedAt: a.basis_observed_at,
+    // 요청서 3.5: max(0, as_of − 기준 시각)
+    elapsedMinutes: Math.max(0, Math.round((asOfMs - basisMs) / 60_000)),
+    walkingSpeedMps: a.walking_speed_mps,
+    levels: a.levels.map((l) => ({
+      level: AREA_LEVEL[l.level] ?? 'low',
+      polygons: areaView(l.geometry),
+      maxMinutes: Math.round(l.max_travel_time_s / 60),
+    })),
+    dangerOverlaps: a.hazard_overlaps.map((o) => ({
+      zoneId: idView(o.zone_id),
+      name: o.name,
+      severity: o.severity,
+      level: AREA_LEVEL[o.level] ?? 'low',
+    })),
+    priorityZones: a.priority_areas.map((p) => {
+      const polygons = areaView(p.geometry);
+      // 서버 우선 구역에는 이름이 없다: 첫 이유를 이름처럼, 나머지를 설명으로
+      const [first, ...rest] = p.reasons;
+      return {
+        rank: p.rank,
+        name: first ?? `우선 구역 ${p.rank}`,
+        reason: rest.join(' · '),
+        center: centerOf(polygons),
+        polygons,
+      };
+    }),
+    warnings: a.warnings.map((w) => ({ code: w.code, message: w.message })),
+  };
+}
+
+export const fromServerWatch = (w: S['WatchState']): WatchView => ({
+  enabled: w.enabled,
+  status: w.status,
+  cameras: w.cameras.map((c) => ({
+    cameraId: idView(c.camera_id),
+    status: c.status,
+    reason: c.blocked_reason ?? c.reason_code,
+  })),
+  watchingCount: w.cameras.filter((c) => c.status === 'watching').length,
+  updatedAt: w.updated_at,
+});
+
+const ALERT_STATUS = { pending: 'new', confirmed: 'confirmed', rejected: 'dismissed' } as const;
+
+export const fromServerAlert = (a: S['Alert']): AlertView => ({
+  id: a.alert_id,
+  cameraId: idView(a.camera_id),
+  cameraCode: splitCameraName(a.camera_name).code,
+  level: a.level,
+  version: a.version,
+  createdAt: a.detected_at,
+  seenAt: a.detected_at,
+  thumbnailUrl: a.snapshot_url,
+  similarity: a.similarity,
+  status: ALERT_STATUS[a.status],
+  respondedByName: a.decided_by?.display_name ?? null,
+  sceneId: `alert:${a.alert_id}`,
+});
+
+/** 사건 장면 상세(alert:{id} 등). 원본 크기를 몰라 박스는 그리지 않는다 */
+export const fromServerCaseScene = (cs: S['CaseScene']) =>
+  fromServerMediaScene(fromServerRouteScene(cs.scene), cs.media, cs.trajectory, null);
+
+// ---------- 영상 ----------
+
+const ANALYSIS_STATUS = {
+  queued: 'waiting',
+  running: 'processing',
+  done: 'done',
+  failed: 'failed',
+} as const;
+
+export const fromServerVideo = (v: S['Video']): VideoView => ({
+  id: idView(v.video_id),
+  label: `영상 #${v.video_id}`,
+  cameraId: idView(v.camera_id),
+  cameraCode: splitCameraName(v.camera_name).code,
+  cameraName: splitCameraName(v.camera_name).name,
+  recordedAt: v.recorded_start_at,
+  durationSec: v.duration_s,
+  status: ANALYSIS_STATUS[v.analysis.status],
+  stage: v.analysis.stage,
+  progress: v.analysis.progress,
+  errorMessage: v.analysis.message,
+  taskId: v.analysis.task_id,
+  caseId: v.case_id === null ? null : idView(v.case_id),
+  uploadedAt: v.created_at,
+  trackletCount: v.tracklet_count,
+  warnings: v.warnings.map((w) => w.message),
+});
+
+const toCameraStats = (c: VideoStatusCounts): CameraVideoStats => ({
+  total: c.queued + c.running + c.done + c.failed,
+  waiting: c.queued,
+  processing: c.running,
+  done: c.done,
+  failed: c.failed,
+});
+
+export const fromServerVideoStats = (s: ServerVideoStats): VideoStatsView => ({
+  total: s.total,
+  byStatus: {
+    waiting: s.by_status.queued,
+    processing: s.by_status.running,
+    done: s.by_status.done,
+    failed: s.by_status.failed,
+  },
+  byCamera: Object.fromEntries(
+    s.by_camera.map((c) => [idView(c.camera_id), toCameraStats(c.by_status)]),
+  ),
+  asOf: s.as_of,
+});
+
+// ---------- 계정·이용 기록·보관 ----------
+
+export const fromServerAudit = (l: S['AuditEntry']): AuditLogView => ({
+  id: l.log_id,
+  at: l.occurred_at,
+  userName: l.actor_name ?? '(시스템)',
+  action: l.action,
+  caseId: l.case_id === null ? null : idView(l.case_id),
+  target: l.resource_id ? `${l.resource_type} ${l.resource_id}` : l.resource_type,
+  result: l.result,
+  changedFields: l.changed_fields,
+});
+
+export const fromServerRetention = (r: S['RetentionPolicy']): RetentionView => ({
+  videoDays: r.video_retention_days,
+  closedCaseDays: r.closed_case_retention_days,
+  alertDays: r.alert_retention_days,
+  auditDays: r.audit_retention_days,
+  automaticDeletion: r.automatic_deletion_enabled,
+  version: r.version,
+  updatedAt: r.updated_at,
+});
+
+export const fromServerDeletionCandidate = (d: S['DeletionCandidate']): DeletionCandidateView => ({
+  kind: d.resource_type,
+  id: d.resource_id,
+  retainUntil: d.retain_until,
+  eligible: d.eligible,
+  blockedReasons: d.blocked_reasons,
+  referencedCaseIds: d.referenced_case_ids.map(idView),
+  estimatedBytes: d.estimated_bytes,
+});

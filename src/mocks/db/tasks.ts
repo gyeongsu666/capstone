@@ -1,6 +1,6 @@
 // 오래 걸리는 작업 흉내: 약 1초마다 progress 0 → 40 → 80 → 100 (docs/mock-scenario.md)
 import type { S } from '@/api/server';
-import type { Task, TaskStatus, TaskType } from '@/api/types';
+import type { Task, TaskStatus, TaskType } from '@/mocks/db/legacyTypes';
 import { db, newId } from '@/mocks/db';
 import type { DbTask, DbTaskEffect } from '@/mocks/db/schema';
 import { addFakeCandidates } from '@/mocks/db/fakeCandidates';
@@ -47,8 +47,6 @@ const SERVER_KIND = {
   WALK_ROUTE_CALC: 'walk_graph_recalculation',
   QUERY_EMBEDDING: 'query_embedding',
   CANDIDATE_SEARCH: 'candidate_search',
-  // 서버에는 현재 위치 계산 작업이 없다(조회할 때 계산). 옮기기 전까지 임시로 둔다.
-  SEARCH_AREA_CALC: 'candidate_search',
 } as const;
 
 /** 백엔드 Task 모양 */
@@ -111,9 +109,6 @@ function applyEffect(e: DbTaskEffect, success: boolean) {
     const img = q?.images.find((i) => i.id === e.image_id);
     if (img && success) img.ready = true;
     if (img && !success && q) q.images = q.images.filter((i) => i.id !== e.image_id);
-  }
-  if (e.kind === 'area_done' && success) {
-    db.state.search_area_at[e.case_id] = Date.now();
   }
   if (e.kind === 'search_done') {
     const q = db.state.queries[e.case_id];

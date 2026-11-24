@@ -151,14 +151,17 @@ export const decisions: DecisionView[] = [
 
 export const alertNew: AlertView = {
   id: 'alert-1',
+  cameraId: '10',
   cameraCode: 'C10',
+  level: 'high',
+  version: 1,
   createdAt: new Date(Date.now() - 2 * 60_000).toISOString(),
   seenAt: new Date(Date.now() - 3 * 60_000).toISOString(),
   thumbnailUrl: thumb('red'),
   similarity: 0.84,
   status: 'new',
   respondedByName: null,
-  scene: scene('C10', '16:01'),
+  sceneId: 'alert:1',
 };
 
 export const alertAnswered: AlertView = {

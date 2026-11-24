@@ -6,13 +6,12 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { request } from '@/api/client';
-import { fetchAll, idServer, pointServer } from '@/api/convert';
+import { fetchAll, idServer, PAGE_LIMIT, pointServer } from '@/api/convert';
 import { queryKeys } from '@/api/queryKeys';
 import type { S, ServerCase, ServerCaseCreateRequest, ServerCasePage } from '@/api/server';
-import type { CaseVideo, CaseVideoAccepted } from '@/api/types';
 import {
   fromServerCase,
-  toCaseVideoView,
+  fromServerVideo,
   type CloseReasonView,
   type LatLngView,
   type WalkSpeedPresetView,
@@ -47,27 +46,31 @@ export const removeAssignee = (caseId: string, userId: string) =>
   );
 
 export const getCaseVideos = (caseId: string) =>
-  request<CaseVideo[]>('GET', `/cases/${caseId}/videos`);
+  request<S['VideoPage']>('GET', `/cases/${idServer(caseId)}/videos`, {
+    query: { limit: PAGE_LIMIT },
+  });
 
 export interface CaseVideoInput {
   file: File;
+  /** 카메라 이름(선택, 예: 편의점 블랙박스) */
   name: string;
   location: LatLngView;
   directionDeg: number;
-  fovDeg?: number;
   recordedAt: string;
 }
 
+/** 사건 영상 추가: 사건 전용 카메라와 영상을 함께 만든다(화각 입력 없음, 요청서 3.7) */
 export function addCaseVideo(caseId: string, v: CaseVideoInput) {
   const form = new FormData();
   form.append('file', v.file);
-  form.append('name', v.name);
-  form.append('lat', String(v.location.lat));
-  form.append('lng', String(v.location.lng));
+  form.append('longitude', String(v.location.lng));
+  form.append('latitude', String(v.location.lat));
   form.append('direction_deg', String(v.directionDeg));
-  if (v.fovDeg !== undefined) form.append('fov_deg', String(v.fovDeg));
-  form.append('recorded_at', v.recordedAt);
-  return request<CaseVideoAccepted>('POST', `/cases/${caseId}/videos`, { formData: form });
+  form.append('recorded_start_at', v.recordedAt);
+  if (v.name.trim()) form.append('camera_name', v.name.trim());
+  return request<S['VideoAccepted']>('POST', `/cases/${idServer(caseId)}/videos`, {
+    formData: form,
+  });
 }
 
 // ---------- 훅 ----------
@@ -197,7 +200,7 @@ export function useCaseVideos(caseId: string, options: { enabled?: boolean; poll
   return useQuery({
     queryKey: queryKeys.cases.videos(caseId),
     queryFn: () => getCaseVideos(caseId),
-    select: (list) => list.map(toCaseVideoView),
+    select: (p) => p.items.map(fromServerVideo),
     enabled: options.enabled ?? true,
     refetchInterval: options.poll ? 2500 : false,
   });

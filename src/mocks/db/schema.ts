@@ -20,12 +20,13 @@ import type {
   Place,
   Role,
   WalkSpeedPreset,
-  Retention,
-} from '@/api/types';
-import type { ServerSystemSettings } from '@/api/server';
+} from '@/mocks/db/legacyTypes';
+import type { S, ServerSystemSettings } from '@/api/server';
+
+type ServerRetentionPolicy = S['RetentionPolicy'];
 
 /** 가짜 DB 구조. 바꾸면 DB_VERSION을 올려 저장된 데이터를 다시 만든다. */
-export const DB_VERSION = 14;
+export const DB_VERSION = 17;
 
 export interface DbUser {
   id: string;
@@ -37,6 +38,7 @@ export interface DbUser {
   active: boolean;
   must_change_password: boolean;
   created_at: DateTime;
+  version?: number;
 }
 
 /** 세션 쿠키 refind_session의 값(id)과 그 세션의 CSRF 토큰 */
@@ -92,7 +94,6 @@ export type DbTaskEffect =
   | { kind: 'image_ready'; case_id: string; image_id: string }
   /** fake_count: 끝날 때 만들 가짜 새 후보 수(시연용) */
   | { kind: 'search_done'; case_id: string; fake_count?: number }
-  | { kind: 'area_done'; case_id: string }
   | { kind: 'none' };
 
 export interface DbTask {
@@ -146,6 +147,8 @@ export interface DbDecision {
   version?: number;
   /** 이 판단을 만든 검색 */
   search_id?: string | null;
+  /** 출현 알림에서 나온 판단이면 그 알림 id(source_type=alert) */
+  alert_id?: string | null;
 }
 
 /** 후보 검색 실행(search_id 단위). 결과는 기준점(anchor)으로 계산한다 */
@@ -198,6 +201,10 @@ export interface DbAlert {
   status: AlertStatus;
   created_at: DateTime;
   responded_by: string | null;
+  responded_at?: string | null;
+  /** 알림 판단(예/아니오) 기록 */
+  decision_id?: string | null;
+  version?: number;
 }
 
 /** 위험 지역(백엔드 kind·severity). area는 GeoJSON Polygon */
@@ -220,7 +227,8 @@ export interface DbState {
   cases: DbCase[];
   /** 백엔드 SystemSettings 모양 그대로(+ R5 out_of_filter_threshold) */
   settings: ServerSystemSettings;
-  retention: Retention;
+  /** 백엔드 RetentionPolicy 모양 그대로 */
+  retention: ServerRetentionPolicy;
   audit_logs: DbAuditLog[];
   cameras: (Camera & { version?: number })[];
   danger_zones: DbDangerZone[];
@@ -231,8 +239,6 @@ export interface DbState {
   candidates: DbCandidate[];
   decisions: DbDecision[];
   queries: Record<string, DbQuery>;
-  /** 사건별 현재 위치 범위 계산 시각(epoch ms) */
-  search_area_at: Record<string, number>;
   watches: Record<string, DbWatch>;
   alerts: DbAlert[];
   searches: DbSearch[];

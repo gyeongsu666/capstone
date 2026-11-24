@@ -11,7 +11,7 @@ import type {
   ServerPasswordChangeRequest,
   ServerPasswordChangeResponse,
 } from '@/api/server';
-import { fromServerUser } from '@/api/view/mappers';
+import { fromServerUser } from '@/api/view';
 import { useAuthStore } from '@/stores/auth';
 import { useCaseNavStore } from '@/stores/case';
 

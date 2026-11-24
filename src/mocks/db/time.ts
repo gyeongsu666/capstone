@@ -1,4 +1,4 @@
-import type { DateTime } from '@/api/types';
+import type { DateTime } from '@/mocks/db/legacyTypes';
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 

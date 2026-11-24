@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { DatePicker, Select, Space, Table, Tag, type TableProps } from 'antd';
+import { Button, DatePicker, Select, Space, Table, Tag, type TableProps } from 'antd';
 import type { Dayjs } from 'dayjs';
-import { useAuditLogs, useUsers } from '@/api/admin';
+import { useAllUsers, useAuditLogs } from '@/api/admin';
 import { useAllCases } from '@/api/cases';
-import type { AuditActionView, AuditLogView } from '@/api/view';
+import type { AuditLogView } from '@/api/view';
+import { statusColor } from '@/theme';
 import { formatDateTime } from '@/utils/format';
 
-const AUDIT_ACTION_LABEL: Record<AuditActionView, string> = {
+/** 알려진 행동 이름(서버 action 문자열). 모르는 값은 그대로 보여 준다 */
+const AUDIT_ACTION_LABEL: Record<string, string> = {
   login: '로그인',
   search: '검색',
   decision: '판단',
@@ -20,25 +22,36 @@ const AUDIT_ACTION_LABEL: Record<AuditActionView, string> = {
   data_delete: '데이터 삭제',
 };
 
-/** 이용 기록: 기간·사용자·사건·행동 필터 + 읽기 전용 표 (SYS01-008) */
+/** 대상 자원 이름 */
+const RESOURCE_LABEL: Record<string, string> = {
+  session: '세션',
+  case: '사건',
+  decision: '판단',
+  video: '영상',
+  user: '계정',
+  settings: '설정',
+  retention: '데이터 보관',
+};
+
+/**
+ * 이용 기록: 기간·사용자·사건·행동 필터 + 읽기 전용 표 (SYS01-008).
+ * 서버 기록에는 설명 문장이 없고, 대상(자원)과 바뀐 필드·결과만 있다.
+ */
 export function AuditTab() {
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const [userId, setUserId] = useState<string>();
   const [caseId, setCaseId] = useState<string>();
-  const [action, setAction] = useState<AuditActionView>();
-  const [page, setPage] = useState(1);
-  const { data: users } = useUsers({ q: '', page: 1 });
-  const { data: allCases } = useAllCases();
-  const { data, isLoading } = useAuditLogs({
+  const [action, setAction] = useState<string>();
+  const { data: users = [] } = useAllUsers();
+  const { data: cases = [] } = useAllCases();
+  const { items, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useAuditLogs({
     from: range?.[0]?.startOf('day').format('YYYY-MM-DDTHH:mm:ssZ'),
     to: range?.[1]?.endOf('day').format('YYYY-MM-DDTHH:mm:ssZ'),
     userId,
     caseId,
     action,
-    page,
   });
-  const reset = () => setPage(1);
-  const cases = allCases ?? [];
+  const caseTitle = (id: string) => cases.find((c) => c.id === id)?.title;
 
   const columns: TableProps<AuditLogView>['columns'] = [
     {
@@ -52,15 +65,51 @@ export function AuditTab() {
       title: '행동',
       key: 'action',
       width: 110,
-      render: (_, l) => <Tag>{AUDIT_ACTION_LABEL[l.action]}</Tag>,
+      render: (_, l) => <Tag>{AUDIT_ACTION_LABEL[l.action] ?? l.action}</Tag>,
     },
     {
       title: '사건',
       key: 'case',
-      width: 100,
-      render: (_, l) => <span className="num">{l.caseNo ?? '—'}</span>,
+      width: 160,
+      render: (_, l) =>
+        l.caseId ? (
+          <span>
+            <span className="num" style={{ color: 'rgba(0,0,0,0.45)' }}>
+              #{l.caseId}{' '}
+            </span>
+            {caseTitle(l.caseId) ?? ''}
+          </span>
+        ) : (
+          '—'
+        ),
     },
-    { title: '내용', dataIndex: 'detail', key: 'detail' },
+    {
+      title: '대상 · 바뀐 항목',
+      key: 'target',
+      render: (_, l) => {
+        const [type, ...rest] = l.target.split(' ');
+        return (
+          <span>
+            {RESOURCE_LABEL[type] ?? type}
+            {rest.length ? ` ${rest.join(' ')}` : ''}
+            {l.changedFields.length > 0 && (
+              <span style={{ color: 'rgba(0,0,0,0.55)' }}> · {l.changedFields.join(', ')}</span>
+            )}
+          </span>
+        );
+      },
+    },
+    {
+      title: '결과',
+      key: 'result',
+      width: 70,
+      render: (_, l) =>
+        l.result === 'success' ? (
+          <Tag color="green">성공</Tag>
+        ) : (
+          <Tag color={statusColor.danger}>실패</Tag>
+        ),
+    },
   ];
 
   return (
@@ -68,10 +117,7 @@ export function AuditTab() {
       <Space wrap style={{ marginBottom: 12 }}>
         <DatePicker.RangePicker
           value={range}
-          onChange={(v) => {
-            setRange(v);
-            reset();
-          }}
+          onChange={(v) => setRange(v)}
           placeholder={['시작일', '종료일']}
         />
         <Select
@@ -81,11 +127,8 @@ export function AuditTab() {
           placeholder="사용자"
           style={{ width: 140 }}
           value={userId}
-          onChange={(v) => {
-            setUserId(v);
-            reset();
-          }}
-          options={users?.items.map((u) => ({ value: u.id, label: u.name }))}
+          onChange={setUserId}
+          options={users.map((u) => ({ value: u.id, label: u.name }))}
         />
         <Select
           allowClear
@@ -94,10 +137,7 @@ export function AuditTab() {
           placeholder="사건"
           style={{ width: 160 }}
           value={caseId}
-          onChange={(v) => {
-            setCaseId(v);
-            reset();
-          }}
+          onChange={setCaseId}
           options={cases.map((c) => ({ value: c.id, label: `#${c.id} ${c.title}` }))}
         />
         <Select
@@ -105,30 +145,28 @@ export function AuditTab() {
           placeholder="행동"
           style={{ width: 130 }}
           value={action}
-          onChange={(v) => {
-            setAction(v);
-            reset();
-          }}
-          options={(Object.keys(AUDIT_ACTION_LABEL) as AuditActionView[]).map((a) => ({
-            value: a,
-            label: AUDIT_ACTION_LABEL[a],
-          }))}
+          onChange={setAction}
+          options={Object.entries(AUDIT_ACTION_LABEL).map(([value, label]) => ({ value, label }))}
         />
       </Space>
       <Table<AuditLogView>
         size="small"
         rowKey="id"
         columns={columns}
-        dataSource={data?.items}
+        dataSource={items}
         loading={isLoading}
-        pagination={{
-          current: page,
-          pageSize: 20,
-          total: data?.total,
-          onChange: setPage,
-          hideOnSinglePage: true,
-          showSizeChanger: false,
-        }}
+        pagination={false}
+        footer={
+          hasNextPage
+            ? () => (
+                <div style={{ textAlign: 'center' }}>
+                  <Button loading={isFetchingNextPage} onClick={() => fetchNextPage()}>
+                    더 보기
+                  </Button>
+                </div>
+              )
+            : undefined
+        }
         locale={{ emptyText: '조건에 맞는 기록이 없어요.' }}
       />
     </>
