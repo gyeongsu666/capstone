@@ -12,7 +12,6 @@ import sys
 from uuid import uuid4
 
 import numpy as np
-from psycopg.types.json import Jsonb
 
 ROOT = Path(__file__).resolve().parents[1]
 os.environ.setdefault('YOLO_CONFIG_DIR', str(ROOT / '.runtime/ultralytics'))
@@ -50,7 +49,7 @@ def analyze(args):
     encoder=IntelEncoder(cv2,np)
     tracker=output/'bytetrack.yaml'
     tracker.write_text(json.dumps(dict(tracker_type='bytetrack',track_high_thresh=.25,
-        track_low_thresh=.1,new_track_thresh=.25,track_buffer=90,match_thresh=.8,fuse_score=True)))
+        track_low_thresh=.1,new_track_thresh=.25,track_buffer=90,match_thresh=.8,fuse_score=True)),encoding='utf-8')
     tracks={}; samples=[]; sample_vectors=[]; count=0; bucket=None
 
     def flush():
@@ -119,11 +118,11 @@ def analyze(args):
             imgsz=args.imgsz,sampling='best quality per ID per video-second; saved JPEG encoded',
             aggregation='mean of L2-normalized sample vectors, then L2 normalization',
             demo_metadata=args.demo,tracks=[tracks[no] for no in numbers])
-        (output/'tracks.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2))
+        (output/'tracks.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
         print(f'Analysis complete: {output}; tracks={len(numbers)}, thumbnails={len(samples)}')
         return output
     except BaseException:
-        (output/'FAILED.txt').write_text('Analysis incomplete; do not ingest')
+        (output/'FAILED.txt').write_text('Analysis incomplete; do not ingest',encoding='utf-8')
         raise
     finally:
         cap.release()
@@ -132,7 +131,7 @@ def analyze(args):
 def load_bundle(folder):
     folder=Path(folder).resolve()
     if (folder/'FAILED.txt').exists(): raise ValueError('Incomplete analysis')
-    m=json.loads((folder/'tracks.json').read_text())
+    m=json.loads((folder/'tracks.json').read_text(encoding='utf-8'))
     with np.load(folder/'embeddings.npz',allow_pickle=False) as data:
         numbers=data['track_numbers'].copy(); vectors=data['track_vectors'].copy()
         sample_vectors=data['sample_vectors'].copy()
@@ -170,6 +169,7 @@ def load_bundle(folder):
 
 
 def ingest(args):
+    from psycopg.types.json import Jsonb
     m,vectors=load_bundle(args.folder)
     start=datetime.fromisoformat(m['recorded_start_at'])
     with connect() as conn:
@@ -270,7 +270,7 @@ def query(args):
             (vector,args.video_id,encoder.model_id,vector)).fetchall()
     if not rows: raise ValueError('No completed tracklets for that video and Re-ID model')
     results=[dict(zip(('tracklet_id','track_no','thumbnail_path','start_seconds','end_seconds','sample_count','similarity'),r)) for r in rows]
-    (output/'results.json').write_text(json.dumps(results,ensure_ascii=False,indent=2))
+    (output/'results.json').write_text(json.dumps(results,ensure_ascii=False,indent=2),encoding='utf-8')
     render_report(output/'rank5.html',crop,results,args.video_id)
     render_contact_sheet(output/'rank5.png',crop,results)
     print(f'Rank-5 report: {output/"rank5.html"}')

@@ -24,7 +24,7 @@ with connect() as c:
     print(f'PASS: {len(rows)} ID vectors and {sum(len(r[2]) for r in rows)} thumbnails match DB')
 if a.query_output:
     q=np.load(a.query_output/'query_vector.npy')
-    results=json.loads((a.query_output/'results.json').read_text())
+    results=json.loads((a.query_output/'results.json').read_text(encoding='utf-8'))
     order=np.argsort(-(v@q))[:5]
     assert [m['tracks'][i]['track_no'] for i in order]==[r['track_no'] for r in results]
     assert np.allclose(v[order]@q,[r['similarity'] for r in results],atol=1e-5)

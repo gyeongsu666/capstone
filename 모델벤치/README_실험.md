@@ -1,6 +1,60 @@
-# 인물 검색: 네 조합 비교
+# 인물 검색: 모델 조합 비교
 
-입력은 이 폴더의 `video_1.mp4`와 `person_1.png`입니다. 사진은 검색할 인물 한 명을 중심으로 잘라서 준비하세요. 원본 입력 파일은 수정하지 않습니다.
+## 다섯 조합을 한 번에 실행하기 (01·02·03·04·06)
+
+`00_run_all_benchmarks.py`를 실행하면 YOLO11n+SigLIP, YOLO11n+Intel,
+YOLO26n+SigLIP, YOLO26n+Intel, YOLO26n+ONNX Re-ID 순서로 실행합니다.
+각 실험은 별도 프로세스로 순차 실행하며, 종료 후 모델 메모리가 반환됩니다.
+
+기준 사진은 **통합 코드 상단의 `QUERY_IMAGE` 한 곳만** 바꾸면 됩니다.
+단독 실행 파일의 기본 사진과 관계없이 다섯 실험에 같은 사진을 전달합니다.
+
+```python
+QUERY_IMAGE = ROOT / "person_4.png"  # 원하는 사진으로 변경
+VIDEO_PATH = ROOT / "video_1.mp4"
+DEVICE = "auto"                     # GPU 사용 가능 시 GPU, 아니면 CPU
+```
+
+```powershell
+cd D:\LEFT
+.\.venv\Scripts\python.exe .\00_run_all_benchmarks.py
+
+# 코드 수정 없이 사진 또는 장치를 지정할 수도 있습니다.
+.\.venv\Scripts\python.exe .\00_run_all_benchmarks.py --image person_2.png --device 0
+```
+
+기본값은 1초 간격, Top 5, conf=0.3, iou=0.7, imgsz=640, max_det=300입니다.
+코드 상단에서 사진·영상·저장 위치·장치·검사 간격·Top K·검출 설정을 바꿀 수 있습니다.
+명령행 옵션이 코드 상단 설정보다 우선합니다. Intel 특징 추출은 항상 CPU이며,
+SigLIP 장치는 `SIGLIP_DEVICE` 또는 `--siglip-device`로 별도 지정할 수 있습니다.
+ONNX는 기존 06 코드의 모델·입력 크기·provider 검증을 그대로 사용합니다.
+
+```text
+all_benchmark_results/
+  all_날짜_시간_식별자/
+    report.html             다섯 모델의 전체 시간 비교·장치·검출 수·Top K 사진·상세 측정값
+    summary.csv             다섯 실험을 행으로 모은 전체 수치 비교표 (Excel에서 열기 가능)
+    runs/
+      01_yolo11n_siglip/     콘솔 로그와 기존 형식의 원본 결과
+      02_yolo11n_intel/
+      03_yolo26n_siglip/
+      04_yolo26n_intel/
+      06_compare_reid_tracking/
+```
+
+**`report.html`을 브라우저로 열면 한 파일에서 비교할 수 있습니다.** 기준 사진과 결과 사진이
+HTML 안에 포함되므로 이 파일 하나만 복사해서 볼 수 있습니다. 실험 하나가 끝날 때마다 보고서를
+갱신하므로 실행 중 열어 두었다면 새로고침하세요. 하나가 실패해도 나머지 실험은 계속 실행하고,
+실패 상태와 로그 내용을 보고서에 표시합니다. Ctrl+C로 중단하면 완료된 결과를 보존합니다.
+실행할 때마다 새 폴더를 만들며 기존 결과는 덮어쓰지 않습니다.
+
+첫 실행은 모델 다운로드가 포함될 수 있습니다. ONNX의 CUDA 환경이 맞지 않으면 해당 실험은
+실패로 기록되며, CPU로 측정하려면 `--device cpu`를 지정하세요. 서로 다른 특징 모델의
+유사도 숫자 크기만으로 정확도를 비교할 수 없으며, Top K는 서로 다른 사람이 아닌 후보 장면입니다.
+
+## 기존 개별 실행
+
+기본 영상은 이 폴더의 `video_1.mp4`입니다. 현재 개별 실행 기본 사진은 01·02·03·04의 경우 `person_4.png`, 06의 경우 `person_3.png`입니다. `--image`로 바꿀 수 있으며 통합 실행에서는 `QUERY_IMAGE`가 다섯 실험에 공통 적용됩니다. 사진은 검색할 인물 한 명을 중심으로 잘라서 준비하세요. 원본 입력 파일은 수정하지 않습니다.
 
 | 실행 파일 | 검출 | 특징 벡터 |
 |---|---|---|
@@ -132,6 +186,73 @@ python 05_make_tracking_videos.py --imgsz 640 --conf 0.3 --lost-seconds 1
 ```
 
 구현 참고: [Ultralytics 추적 API와 ByteTrack](https://docs.ultralytics.com/modes/track/).
+
+## YOLO26n + 전용 ONNX Re-ID로 기준 사진 Top 5 검색
+
+`06_compare_reid_tracking.py`는 **person_1.png를 기준으로 video_1.mp4에서 유사한 사람의 상위 5개 장면을 찾습니다.** 검출에는 `yolo26n.pt`, 벡터 추출에는 Ultralytics에서 제공하는 `yolo26n-reid.onnx`를 사용합니다. 이전 검출기 내부 특징 재사용 방식에서 별도 ONNX 외형 인코더로 변경했습니다. 파일 이름은 유지하지만 추적 코드는 아니며 Intel은 재실행하지 않습니다.
+
+```powershell
+# CUDA를 명시: YOLO 또는 ONNX에서 CUDA를 사용할 수 없으면 중단
+python 06_compare_reid_tracking.py --device 0
+
+# 다른 기준 사진으로 같은 실험
+python 06_compare_reid_tracking.py --device 0 --image person_2.png
+python 06_compare_reid_tracking.py --device 0 --image person_3.png
+
+# 명시적으로 CPU 측정
+python 06_compare_reid_tracking.py --device cpu
+```
+
+첫 실행 시 ONNX 파일이 없으면 Ultralytics 다운로드 기능으로 `models/yolo26n-reid.onnx`에 받습니다. 이미 받은 파일은 `--reid-model 경로.onnx`로 지정할 수 있습니다. CUDA 실험에는 호환되는 `onnxruntime-gpu`와 CUDA/cuDNN 라이브러리가 필요합니다. PyTorch에서 CUDA가 동작하더라도 ONNX CUDA 지원은 별도로 확인해야 합니다. 실행 시 실제 ONNX provider와 입력 크기를 출력하고, 설정 파일에 provider 목록과 옵션을 저장합니다. CUDA 요청 시 CPU provider만 선택된 실행은 중단합니다. CUDA provider가 활성화되어도 지원하지 않는 일부 연산은 ONNX Runtime이 CPU에 배치할 수 있습니다.
+
+Intel 검색과 같은 조건은 다음과 같습니다.
+
+- YOLO26n 검출 크기 640, 신뢰도 0.3, IoU 0.7, 최대 300개, FP32, 배치 1. 검출 인자는 `search_benchmark.py`와 동일하게 전달합니다.
+- 기본 1초 간격 검사, 프레임 번호·시간 산출, 좌표 내림/올림·경계 제한과 패딩 없는 사람 크롭.
+- **기준 사진 전체를 그대로 인코딩**합니다. 기준 사진에서 사람을 다시 검출하거나 일부를 선택하지 않습니다. 검색할 사람 중심의 사진을 사용하세요.
+- L2 정규화 후 코사인 유사도 계산, 프레임별 최고 후보 한 명을 모아 상위 5개 장면 저장. 같은 사람이 여러 시간대에 포함될 수 있습니다.
+
+특징 모델에는 각각의 입력 규격을 적용합니다. ONNX Re-ID는 공식 Ultralytics 인코더와 같은 RGB, 0~1, bilinear resize(`align_corners=False`), NCHW 입력을 사용합니다. 입력 크기는 ONNX의 고정 크기를 우선하며 동적 크기일 때만 `--reid-imgsz` 기본값 448을 사용합니다. Intel은 기존 BGR·0~255·256×128 규격을 유지합니다. 크롭의 원본 픽셀은 동일하게 사용하되 모델별 전처리 크기와 색상 규격은 다릅니다. 비교 정밀도를 유지하기 위해 ONNX FP16 입력 및 고정 배치 2 이상 모델은 거부합니다.
+
+```text
+yolo26n_reid_results/
+  benchmark_summary.csv               새 ONNX 검색 실험 누적 요약
+  yolo26n_reid_날짜_시간_식별자/
+    top5.csv                          상위 5개 시간·좌표·유사도
+    rank_01_time_...s.jpg              후보를 표시한 전체 장면
+    rank_01_time_...s_crop.jpg          후보 사람 원본 이미지, 2~5위도 저장
+    query_vector.npy                  기준 사진 정규화 벡터
+    gallery_vectors.npz                모든 유효 검출의 벡터
+    detections.csv                    벡터 행 번호·프레임·시간·좌표·유사도
+    query_encoding.json               기준 사진 전체 사용 여부·차원
+    settings.json                     입력·설정·모델 해시·ONNX provider
+    timing.json                       단계별 시간·차원·환경·경고
+    summary.csv                       해당 실행 요약 한 행
+```
+
+벡터 차원은 실제 ONNX 출력에서 확인합니다. `vectors`의 행은 `detections.csv`의 `vector_index`에 대응합니다. 이전 `yolo26n_native_reid_results`와 Intel 측정 결과는 그대로 보존합니다.
+
+시간은 이제 **검출**과 **별도 Re-ID 인코딩**을 분리합니다. `gallery_embedding_seconds`에는 크롭 전처리, ONNX 추론, CPU/GPU 전송, L2 정규화를 포함합니다. `query_embedding_seconds`는 기준 사진 전체 인코딩 시간입니다. 준비·모델 다운로드 및 로딩·워밍업을 별도 기록하며, 준비 시간에는 그 구성요소가 이미 포함되므로 중복 합산하지 않습니다. `video_search_seconds`에는 디코딩·검출·인코딩·유사도 계산을 포함하며 결과 이미지 저장 시간은 제외합니다.
+
+Intel은 OpenVINO CPU, 새 실험은 지정한 ONNX 실행 장치이므로 속도는 모델·런타임·장치 조합의 결과입니다. 기존 Intel과 같은 사진·영상·검사 간격을 사용하고, 두 실행의 `detections.csv`에서 검출 개수·프레임·좌표가 같은지도 확인하세요. 유사도 점수 크기 자체를 정확도로 비교하지 말고 상위 5개 정답 여부를 평가하세요. `--interval 0`은 전체 프레임, `--max-seconds 10`은 앞 10초만 검사하므로 기본 실험과 비교할 때 조건을 맞춰야 합니다.
+
+공식 참고: [Ultralytics Re-ID ONNX 인코더 안내](https://docs.ultralytics.com/modes/track/#enabling-re-identification-reid). 공식 인코더는 추적기의 외형 비교 분기에 제공되며, 여기서는 그 벡터를 사진 검색의 코사인 유사도 비교에 사용합니다.
+
+## ONNX CUDA DLL 오류: cublasLt64_13.dll 누락
+
+현재 가상환경의 PyTorch는 `2.14.1+cu126`(CUDA 12.6)이고 기존 `onnxruntime-gpu 1.31.1`은 CUDA 13.0 빌드입니다. 따라서 PyTorch에 포함된 CUDA 12 DLL로 `cublasLt64_13.dll` 의존성을 충족할 수 없습니다. 코드의 CPU 전환 방지 검사로 검색 전에 중단됩니다. ONNX 파일 다운로드 실패나 VRAM 부족 오류와는 다릅니다.
+
+VS Code에서 실행 중인 실험을 종료하고 해당 `.venv`를 활성화한 터미널에서 아래 순서로 실행하세요. CPU/GPU ONNX 패키지는 같은 `onnxruntime` 모듈을 제공하므로 둘 다 제거한 다음 CUDA 12 계열의 GPU 패키지만 설치합니다. Python 3.13 Windows 휠이 제공되는 1.21.1을 지정합니다.
+
+```powershell
+python -m pip uninstall -y onnxruntime onnxruntime-gpu
+python -m pip install --no-cache-dir "onnxruntime-gpu==1.21.1"
+python 06_compare_reid_tracking.py --device 0
+```
+
+`06`은 CUDA 빌드 버전을 기록하고, 알려진 CUDA 주 버전 충돌을 먼저 검사하며, ONNX Runtime의 `preload_dlls()`로 호환되는 PyTorch CUDA/cuDNN DLL을 로딩합니다. 주 버전 일치는 최소 조건이며 실제 세션의 CUDA provider 활성화도 별도로 검사합니다. `get_available_providers()`에 CUDA가 표시되는 것만으로는 DLL 로딩 성공을 확인할 수 없습니다. 성공 시 콘솔의 `Re-ID:` provider 목록 첫 항목이 `CUDAExecutionProvider`인지 확인하세요. DLL 파일을 다른 이름으로 복사하거나 바꾸지 마세요. 이 패키지 교체는 모델 가중치와 기존 벤치마크 결과를 변경하지 않습니다.
+
+참고: [ONNX Runtime과 PyTorch의 CUDA/cuDNN 호환 및 DLL 로딩](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#compatibility-with-pytorch), [1.21.1 Windows/Python 3.13 배포 파일](https://pypi.org/project/onnxruntime-gpu/1.21.1/#files).
 
 ## Windows 오류 1455: 페이징 파일이 너무 작습니다
 

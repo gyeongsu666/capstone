@@ -1,29 +1,44 @@
 """Shared PostgreSQL connection for tracklet storage and search."""
 import os
 from pathlib import Path
-import psycopg
-from pgvector.psycopg import register_vector
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def connect():
-    if os.environ.get('DATABASE_URL'):
-        conn = psycopg.connect(os.environ['DATABASE_URL'], connect_timeout=5)
+def connection_options():
+    """Resolve settings without loading a database driver or opening a connection."""
+    values = {}
+    env = ROOT / '.env'
+    if env.exists():
+        for line in env.read_text(encoding='utf-8').splitlines():
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                values[key] = value
+
+    def setting(key, default=None):
+        return os.environ.get(key, values.get(key, default))
+
+    if setting('DATABASE_URL'):
+        return setting('DATABASE_URL')
     else:
-        values = {}
-        env = ROOT / '.env'
-        if env.exists():
-            for line in env.read_text().splitlines():
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
-                    values[key] = value
-        password = os.environ.get('POSTGRES_PASSWORD', values.get('POSTGRES_PASSWORD'))
+        password = setting('POSTGRES_PASSWORD')
         if not password:
             raise ValueError('Run python scripts/init_db_env.py first or set DATABASE_URL')
-        conn = psycopg.connect(host='127.0.0.1',
-            port=os.environ.get('POSTGRES_PORT', values.get('POSTGRES_PORT', '5432')),
-            dbname='capstone', user='capstone', password=password, connect_timeout=5)
+        return dict(host=setting('POSTGRES_HOST', '127.0.0.1'),
+            port=setting('POSTGRES_PORT', '5432'),
+            dbname=setting('POSTGRES_DB', 'capstone'),
+            user=setting('POSTGRES_USER', 'capstone'), password=password)
+
+
+def connect():
+    options = connection_options()
+    import psycopg
+    from pgvector.psycopg import register_vector
+
+    if isinstance(options, str):
+        conn = psycopg.connect(options, connect_timeout=5)
+    else:
+        conn = psycopg.connect(**options, connect_timeout=5)
     try:
         register_vector(conn)
     except BaseException:

@@ -20,12 +20,16 @@ class TrackletBundleValidation(unittest.TestCase):
         self.write()
     def tearDown(self): self.tmp.cleanup()
     def write(self,**updates):
-        (self.folder/'tracks.json').write_text(json.dumps(self.manifest))
+        (self.folder/'tracks.json').write_text(json.dumps(self.manifest,ensure_ascii=False),encoding='utf-8')
         arrays=dict(track_numbers=np.array([17]),track_vectors=self.mean[None],
             sample_vectors=self.samples,sample_track_numbers=np.array([17,17]),sample_seconds=np.array([0,1]))
         arrays.update(updates);np.savez(self.folder/'embeddings.npz',**arrays)
     def test_mean_from_two_seconds(self):
         _,v=load_bundle(self.folder);self.assertEqual(v.shape,(1,256))
+    def test_korean_metadata_uses_utf8(self):
+        self.manifest['source_video']='영상/카메라_1.mp4';self.write()
+        m,_=load_bundle(self.folder)
+        self.assertEqual(m['source_video'],'영상/카메라_1.mp4')
     def test_vector_from_one_frame_instead_of_mean_rejected(self):
         self.write(track_vectors=self.samples[:1])
         with self.assertRaisesRegex(ValueError,'thumbnail mean'):load_bundle(self.folder)

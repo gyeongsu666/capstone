@@ -163,7 +163,7 @@ def parse_args(detector_name, encoder_name):
         description=f"{detector_name} + {encoder_name}: rank-5 person image search"
     )
     parser.add_argument("--video", type=Path, default=ROOT / "video_1.mp4")
-    parser.add_argument("--image", type=Path, default=ROOT / "person_3.png")
+    parser.add_argument("--image", type=Path, default=ROOT / "person_4.png")
     parser.add_argument("--interval", type=float, default=1.0,
                         help="Sample interval in seconds; 0 means every frame (default: 1)")
     parser.add_argument("--top-k", type=int, default=5)

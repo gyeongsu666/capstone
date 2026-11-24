@@ -1,0 +1,12 @@
+# Optional dependencies for the five-combination benchmark (CPU ONNX Runtime).
+# The server's tested Intel pipeline retains requirements-model.lock.
+numpy
+opencv-python
+torch
+torchvision
+ultralytics
+openvino
+pillow
+transformers
+safetensors
+onnxruntime
