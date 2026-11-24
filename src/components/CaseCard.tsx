@@ -27,8 +27,18 @@ export function CaseCard({ caseData: c, style }: CaseCardProps) {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }} className="num">
-          사건 #{c.caseNo}
+        <span
+          style={{
+            color: '#fff',
+            fontWeight: 600,
+            fontSize: 14,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+          title={c.title}
+        >
+          {c.title}
         </span>
         {c.closed && (
           <span

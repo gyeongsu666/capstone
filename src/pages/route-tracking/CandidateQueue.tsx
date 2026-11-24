@@ -1,5 +1,3 @@
-import { useState } from 'react';
-import { DownOutlined, RightOutlined } from '@ant-design/icons';
 import type { CandidateView, QueueView } from '@/api/view';
 import { CandidateCard } from '@/components/CandidateCard';
 import { statusColor } from '@/theme';
@@ -10,13 +8,16 @@ interface CandidateQueueProps {
   threshold: number;
   activeId: string | null;
   onSelect: (c: CandidateView) => void;
-  /** 재검색 중이면 흐리게 */
+  /** 재검색 중이거나 검색이 낡았으면 흐리게 */
   dimmed?: boolean;
   /** 방금 검색에서 새로 나온 후보 */
   newIds?: string[];
 }
 
-/** 후보 대기열: 유사도 순, 기준값 자리에 점선, 기준 미만은 접되 개수는 표시 */
+/**
+ * 후보 대기열: 유사도 순(보류는 맨 뒤). 서버는 유사도 기준 이상인 후보만 준다.
+ * 맨 아래 점선은 지금 기준값(이보다 낮은 후보는 기준을 낮춰 다시 검색해야 보인다).
+ */
 export function CandidateQueue({
   queue,
   threshold,
@@ -25,13 +26,9 @@ export function CandidateQueue({
   dimmed,
   newIds = [],
 }: CandidateQueueProps) {
-  const [showBelow, setShowBelow] = useState(false);
-  const above = queue.items.filter((c) => !c.belowThreshold);
-  const below = queue.items.filter((c) => c.belowThreshold);
-
   return (
     <div style={{ opacity: dimmed ? 0.5 : 1, transition: 'opacity 0.2s' }}>
-      {above.map((c) => (
+      {queue.items.map((c) => (
         <CandidateCard
           key={c.id}
           candidate={c}
@@ -55,38 +52,6 @@ export function CandidateQueue({
         <span className="num">기준 {formatSimilarity(threshold)}</span>
         <span style={{ flex: 1, borderTop: `1px dashed ${statusColor.pending}` }} />
       </div>
-      {queue.belowThresholdCount > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowBelow((v) => !v)}
-          style={{
-            all: 'unset',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            width: '100%',
-            boxSizing: 'border-box',
-            padding: '6px 12px',
-            fontSize: 12,
-            color: 'rgba(0,0,0,0.55)',
-            cursor: 'pointer',
-          }}
-          aria-expanded={showBelow}
-        >
-          {showBelow ? <DownOutlined /> : <RightOutlined />}
-          <span className="num">기준 미만 {queue.belowThresholdCount}개</span>
-        </button>
-      )}
-      {showBelow &&
-        below.map((c) => (
-          <CandidateCard
-            key={c.id}
-            candidate={c}
-            active={c.id === activeId}
-            isNew={newIds.includes(c.id)}
-            onClick={() => onSelect(c)}
-          />
-        ))}
     </div>
   );
 }

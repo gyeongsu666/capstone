@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react';
 import { Empty } from 'antd';
 import { useSceneDetail } from '@/api/tracking';
-import type { RouteView, SceneView } from '@/api/view';
+import type { CandidateView, RouteView, SceneView } from '@/api/view';
 import { SceneThumbnail } from '@/components/SceneThumbnail';
 import { VideoPlayerModal } from '@/components/VideoPlayer';
 import { statusColor } from '@/theme';
@@ -21,11 +21,18 @@ function Connector({ dashed }: { dashed: boolean }) {
 }
 
 /** 타임라인: 확정 장면을 시간 순으로 잇고, 다음 확인 대기 구간을 점선으로. 장면을 누르면 영상 구간 재생 */
-export function TimelineTab({ route }: { route: RouteView | undefined }) {
+export function TimelineTab({
+  route,
+  pending = null,
+}: {
+  route: RouteView | undefined;
+  /** 지금 확인 중인 후보(점선으로 이어 보여 준다) */
+  pending?: CandidateView | null;
+}) {
   const [playing, setPlaying] = useState<SceneView | null>(null);
   const { data: detail } = useSceneDetail(playing?.id ?? null);
 
-  if (!route || (route.scenes.length === 0 && !route.pending)) {
+  if (!route || (route.scenes.length === 0 && !pending)) {
     return <Empty description="아직 확정된 장면이 없어요." image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   }
 
@@ -40,19 +47,23 @@ export function TimelineTab({ route }: { route: RouteView | undefined }) {
             <SceneThumbnail
               scene={s.scene}
               status={s.status}
-              caption={`${s.order}. ${s.confirmedByName} 확정`}
+              caption={
+                s.status === 'needs_recheck'
+                  ? `${s.order}. 재확인 필요`
+                  : `${s.order}. ${s.confirmedByName} 확정`
+              }
               onClick={() => setPlaying(s.scene)}
             />
           </Fragment>
         ))}
-        {route.pending && (
+        {pending && (
           <>
             {route.scenes.length > 0 && <Connector dashed />}
             <SceneThumbnail
-              scene={route.pending.scene}
+              scene={pending.scene}
               status="pending"
               caption="확인 대기"
-              onClick={() => setPlaying(route.pending!.scene)}
+              onClick={() => setPlaying(pending.scene)}
             />
           </>
         )}

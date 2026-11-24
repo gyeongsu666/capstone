@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Alert, App, Button, Card, Progress, Segmented, Spin, Tabs } from 'antd';
@@ -8,18 +8,27 @@ import { queryKeys } from '@/api/queryKeys';
 import { isApiError } from '@/api/client';
 import {
   getCandidates,
+  useCurrentSearchId,
   useDecide,
   useDecisions,
   useEmbedTask,
+  useLatestSearchId,
   useQueryConditions,
   useQueue,
   useRevert,
   useRoute,
   useRunSearch,
+  useSearchRun,
   useSearchTask,
-  useUploadQueryImage,
+  useUploadQueryPhoto,
 } from '@/api/tracking';
-import { toQueueView, type CandidateView, type QueueView, type VerdictView } from '@/api/view';
+import {
+  toQueue,
+  type CandidateView,
+  type DecisionView,
+  type QueueView,
+  type VerdictView,
+} from '@/api/view';
 import { PageHeader } from '@/app/layout/PageHeader';
 import { ConfirmArea } from '@/components/ConfirmArea';
 import { DecisionLog } from '@/components/DecisionLog';
@@ -41,8 +50,6 @@ interface SearchResult {
   caseId: string;
   at: string;
   total: number;
-  above: number;
-  below: number;
   newIds: string[];
   cameraCount: number | null;
   anchorLabel: string | null;
@@ -70,6 +77,7 @@ function Center({ children }: { children: ReactNode }) {
 /**
  * 동선 추적: 후보 검색 · 장면 확인 · 경로 확인을 한 화면에서.
  * 질의 바 → 검토/지도 전환(확인 영역 · 미니맵 · 대기열) → 아래 탭(타임라인 | 결정 기록)
+ * 후보는 검색(search_id) 단위다. 기준·조건·확정이 바뀌면 검색이 낡아(stale) 다시 검색해야 판단할 수 있다.
  */
 export function RouteTrackingPage() {
   const { caseId = '' } = useParams<{ caseId: string }>();
@@ -77,54 +85,71 @@ export function RouteTrackingPage() {
   const { message } = App.useApp();
   const now = useNow();
   const fileInput = useRef<HTMLInputElement>(null);
+  const qc = useQueryClient();
 
   const { data: caseView } = useCaseView(caseId, { poll: true });
   const { data: query } = useQueryConditions(caseId);
-  const { data: queue, isLoading: queueLoading } = useQueue(caseId);
-  useEffect(() => {
-    queueRef.current = queue;
-  }, [queue]);
+  // 지금 보는 검색: 화면에서 만든 검색, 없으면 사건의 최근 검색(새로고침 복원, R6)
+  const searchId = useCurrentSearchId(caseId);
+  const latestSearchId = useLatestSearchId(caseId);
+  const setSearchId = useTrackingStore((s) => s.setSearchId);
+  const { data: search } = useSearchRun(caseId, searchId);
+  const searchDone = search?.status === 'done';
+  const { data: queue, isLoading: queueLoading } = useQueue(caseId, searchId, searchDone);
   const { data: route } = useRoute(caseId);
-  const { data: decisions = [], isLoading: decisionsLoading } = useDecisions(caseId);
-  const decide = useDecide(caseId);
+  // 결정 기록에는 장면 정보가 없어서 화면이 아는 장면(동선·대기열)으로 채운다
+  const knownScenes = useMemo(
+    () => [
+      ...(route?.scenes.map((x) => x.scene) ?? []),
+      ...(queue?.items.map((c) => c.scene) ?? []),
+    ],
+    [route, queue],
+  );
+  const { data: decisions, isLoading: decisionsLoading } = useDecisions(caseId, knownScenes);
+  const decide = useDecide(caseId, searchId);
   const revert = useRevert(caseId);
   const runSearch = useRunSearch(caseId);
-  const upload = useUploadQueryImage(caseId);
+  const upload = useUploadQueryPhoto(caseId);
   const showUndo = useUndoToastStore((s) => s.show);
 
-  const qc = useQueryClient();
   // 검색 전 대기열(새 후보를 가려내기 위해)
   const queueRef = useRef<QueueView | undefined>(undefined);
+  useEffect(() => {
+    if (queue) queueRef.current = queue;
+  }, [queue]);
   const anchorLabelRef = useRef<string | null>(null);
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
 
-  const { task: searchTask } = useSearchTask(caseId, async (t) => {
-    if (t.status === 'failed') {
-      message.error(`후보 검색이 실패했어요. ${t.error ?? ''}`);
-      return;
-    }
-    const before = new Set((queueRef.current?.items ?? []).map((c) => c.id));
-    const raw = await qc.fetchQuery({
-      queryKey: queryKeys.tracking.queue(caseId),
-      queryFn: () => getCandidates(caseId),
-    });
-    const after = toQueueView(raw).items;
-    const above = after.filter((c) => !c.belowThreshold).length;
-    const newIds = after.filter((c) => !before.has(c.id)).map((c) => c.id);
-    setSearchResult({
-      caseId,
-      at: new Date().toISOString(),
-      total: after.length,
-      above,
-      below: after.length - above,
-      newIds,
-      cameraCount: Number(t.result?.searched_camera_count ?? 0) || null,
-      anchorLabel: anchorLabelRef.current,
-    });
-    message.success(
-      `검색이 끝났어요. 후보 ${after.length}개${newIds.length ? ` · 새 후보 ${newIds.length}개` : ' · 새 후보 없음'}`,
-    );
-  });
+  const searchRunning = search?.status === 'pending' || search?.status === 'running';
+  const searchTask = useSearchTask(
+    caseId,
+    searchRunning ? (search?.taskId ?? null) : null,
+    async (t) => {
+      if (t.status === 'failed') {
+        message.error(`후보 검색이 실패했어요. ${t.error ?? ''}`);
+        return;
+      }
+      if (!searchId) return;
+      const before = new Set((queueRef.current?.items ?? []).map((c) => c.id));
+      const raw = await qc.fetchQuery({
+        queryKey: queryKeys.tracking.queue(caseId, searchId),
+        queryFn: () => getCandidates(caseId, searchId),
+      });
+      const after = toQueue(raw.search, raw.items).items;
+      const newIds = after.filter((c) => !before.has(c.id)).map((c) => c.id);
+      setSearchResult({
+        caseId,
+        at: new Date().toISOString(),
+        total: after.length,
+        newIds,
+        cameraCount: Number(t.result?.searched_camera_count ?? 0) || null,
+        anchorLabel: anchorLabelRef.current,
+      });
+      message.success(
+        `검색이 끝났어요. 후보 ${after.length}개${newIds.length ? ` · 새 후보 ${newIds.length}개` : ' · 새 후보 없음'}`,
+      );
+    },
+  );
   const { task: embedTask } = useEmbedTask(caseId, (t) => {
     if (t.status === 'done') message.success('기준 사진 특징을 뽑았어요. 후보 검색을 시작해요.');
     else message.error(t.error ?? '사진에서 사람을 찾지 못했어요. 다른 사진을 올려 주세요.');
@@ -138,7 +163,6 @@ export function RouteTrackingPage() {
   const setFocused = useTrackingStore((s) => s.setFocused);
   const myDecidedIds = useTrackingStore((s) => s.myDecidedIds);
   const addMyDecided = useTrackingStore((s) => s.addMyDecided);
-  const searchedNow = useTrackingStore((s) => s.searchedCases.includes(caseId));
 
   // 사건을 바꾸면 선택을 비운다
   useEffect(() => {
@@ -147,18 +171,22 @@ export function RouteTrackingPage() {
   }, [caseId, select, setFocused]);
 
   const readOnly = !!caseView?.closed;
-  // 검색 기준점: 마지막 확정 장면(없으면 마지막 확인 장소)
+  // 낡은 검색(기준·조건·확정이 바뀜)으로는 판단할 수 없다
+  const stale = !!search?.stale || !!queue?.search.stale;
+  // 공동 담당자가 새 검색을 만들었으면 판단 중인 화면을 바꾸지 않고 안내만 한다(요청서 R6)
+  const newerSearch = !!latestSearchId && !!searchId && latestSearchId !== searchId;
+  // 검색 기준점: 마지막 확정 장면(없으면 최초 목격)
   const lastConfirmed = route?.scenes.filter((x) => x.status === 'confirmed').at(-1);
+  const anchorDecisionId = lastConfirmed?.decisionId ?? null;
   const anchorLabel = lastConfirmed
     ? `${lastConfirmed.scene.cameraCode} ${formatTime(lastConfirmed.scene.startAt)} 이후`
-    : '마지막 확인 장소 기준';
+    : '마지막 목격 장소 기준';
   useEffect(() => {
     anchorLabelRef.current = anchorLabel;
   }, [anchorLabel]);
   const result = searchResult?.caseId === caseId ? searchResult : null;
-  const searching = !!searchTask;
-  const items = queue?.items ?? [];
-  const above = items.filter((c) => !c.belowThreshold);
+  const searching = searchRunning || runSearch.isPending;
+  const items = searchDone ? (queue?.items ?? []) : [];
 
   // 공동 담당자가 먼저 판단해 대기열에서 빠진 후보는 "OO님이 확정함"으로 그대로 보여준다
   const otherDecision =
@@ -167,39 +195,63 @@ export function RouteTrackingPage() {
       : undefined;
   const current: CandidateView | undefined = otherDecision
     ? (focused ?? undefined)
-    : (items.find((c) => c.id === selectedId) ?? above[0]);
+    : (items.find((c) => c.id === selectedId) ?? items[0]);
 
   useEffect(() => {
     if (!otherDecision && current && current.id !== focused?.id) setFocused(current);
   }, [current, focused, otherDecision, setFocused]);
 
+  const startSearch = () =>
+    runSearch.mutate(
+      { anchorDecisionId },
+      { onError: (e) => message.error(isApiError(e) ? e.detail : '검색을 시작하지 못했어요.') },
+    );
+
   const onDecide = (verdict: VerdictView) => {
-    if (!current || decide.isPending) return;
+    if (!current || decide.isPending || stale) return;
     const c = current;
     addMyDecided(c.id);
     select(null);
     setFocused(null);
     decide.mutate(
-      { candidateId: c.id, verdict },
+      { candidate: c, verdict },
       {
-        onSuccess: (res) => {
+        onSuccess: (d) => {
           showUndo(
             `${c.scene.cameraCode} ${formatTime(c.scene.startAt)} ${VERDICT_TEXT[verdict]}`,
+            // 8초 되돌리기는 사유 없이 번복(요청서 R3)
             () =>
-              revert.mutate(res.decision.id, {
-                onSuccess: () => message.info('판단을 되돌렸어요.'),
-                onError: (e) => message.error(isApiError(e) ? e.detail : '되돌리지 못했어요.'),
-              }),
+              revert.mutate(
+                { decisionId: d.decision_id, version: d.version },
+                {
+                  onSuccess: (res) =>
+                    message.info(
+                      res.invalidated_search_ids.length
+                        ? '판단을 되돌렸어요. 다시 검색하면 후보가 다시 나와요.'
+                        : '판단을 되돌렸어요.',
+                    ),
+                  onError: (e) => message.error(isApiError(e) ? e.detail : '되돌리지 못했어요.'),
+                },
+              ),
           );
         },
         onError: (e) => {
-          if (isApiError(e, 'ALREADY_DECIDED')) {
-            message.warning(e.detail);
-            // 먼저 판단한 사람 안내를 보여주기 위해 이 후보를 계속 보여준다
+          // 먼저 판단한 사람 안내를 보여주기 위해 이 후보를 계속 보여준다
+          const keep = () =>
             useTrackingStore.setState((s) => ({
               myDecidedIds: s.myDecidedIds.filter((id) => id !== c.id),
               focused: c,
             }));
+          if (isApiError(e, 'ALREADY_DECIDED')) {
+            message.warning(e.detail);
+            keep();
+          } else if (isApiError(e, 'VERSION_CONFLICT')) {
+            message.warning(
+              '다른 담당자의 판단이 먼저 저장됐어요. 최신 상태를 불러왔으니 다시 눌러 주세요.',
+            );
+            keep();
+          } else if (isApiError(e, 'SEARCH_STALE')) {
+            message.warning('검색 결과가 낡았어요. 다시 검색한 뒤 판단하세요.');
           } else {
             message.error(isApiError(e) ? e.detail : '판단을 저장하지 못했어요.');
           }
@@ -208,16 +260,28 @@ export function RouteTrackingPage() {
     );
   };
 
-  const onRevert = (decisionId: string) =>
-    revert.mutate(decisionId, {
-      onSuccess: (res) =>
-        message.success(
-          res.affected.length > 1
-            ? `번복했어요. 이후 확정 장면 ${res.affected.length - 1}개는 '재확인 필요'로 바뀌었어요.`
-            : '번복했어요. 후보가 대기열로 돌아왔어요.',
-        ),
-      onError: (e) => message.error(isApiError(e) ? e.detail : '번복하지 못했어요.'),
-    });
+  const onRevert = (d: DecisionView, reason: string) =>
+    revert.mutate(
+      { decisionId: d.id, version: d.version, reason },
+      {
+        onSuccess: (res) =>
+          message.success(
+            res.affected_scenes.length
+              ? `번복했어요. 이후 확정 장면 ${res.affected_scenes.length}개는 '재확인 필요'로 바뀌었어요. 다시 검색하세요.`
+              : res.invalidated_search_ids.length
+                ? '번복했어요. 다시 검색하면 후보가 다시 나와요.'
+                : '번복했어요. 후보가 대기열로 돌아왔어요.',
+          ),
+        onError: (e) =>
+          message.error(
+            isApiError(e, 'VERSION_CONFLICT')
+              ? '기록이 바뀌었어요. 다시 불러왔으니 확인 후 다시 번복하세요.'
+              : isApiError(e)
+                ? e.detail
+                : '번복하지 못했어요.',
+          ),
+      },
+    );
 
   const onPick = (c: CandidateView) => {
     select(c.id);
@@ -229,14 +293,14 @@ export function RouteTrackingPage() {
   // ---------- 가운데(확인 영역 자리) ----------
 
   const centerContent = (compact: boolean): ReactNode => {
-    if (!query || queueLoading) {
+    if (!query || (searchDone && queueLoading)) {
       return (
         <Center>
           <Spin />
         </Center>
       );
     }
-    if (query.images.length === 0) {
+    if (query.status === 'not_set') {
       return (
         <Center>
           <EmptyState
@@ -248,7 +312,7 @@ export function RouteTrackingPage() {
         </Center>
       );
     }
-    if (embedTask && !query.images.some((i) => i.ready)) {
+    if (embedTask && query.status !== 'ready') {
       return (
         <Center>
           <div style={{ width: 280, textAlign: 'center' }}>
@@ -270,7 +334,7 @@ export function RouteTrackingPage() {
         <div style={{ height: '100%', overflowY: 'auto' }}>
           <ConfirmArea
             candidate={current}
-            queryImageUrl={query.images.find((i) => i.ready)?.url ?? query.images[0].url}
+            queryImageUrl={query.imageUrl ?? ''}
             onDecide={onDecide}
             pending={decide.isPending ? (decide.variables?.verdict ?? null) : null}
             decidedBy={
@@ -278,8 +342,13 @@ export function RouteTrackingPage() {
                 ? { name: otherDecision.decidedByName, verdict: otherDecision.verdict }
                 : null
             }
-            readOnly={readOnly}
-            remaining={above.filter((c) => c.status !== 'held').length}
+            readOnly={readOnly || stale}
+            readOnlyReason={
+              readOnly
+                ? undefined
+                : '검색 결과가 낡아 판단할 수 없어요. 위의 "다시 검색"을 눌러 주세요.'
+            }
+            remaining={items.filter((c) => c.status !== 'held').length}
             compact={compact}
           />
           {otherDecision && (
@@ -298,30 +367,30 @@ export function RouteTrackingPage() {
         </div>
       );
     }
-    if (items.length > 0) {
-      return (
-        <Center>
-          <EmptyState message="기준 이상 후보가 없어요. 기준 미만 후보를 보거나 유사도 기준을 낮춰 보세요." />
-        </Center>
-      );
-    }
     if (!route || route.scenes.length === 0) {
       return (
         <Center>
           <EmptyState
             icon={<SearchOutlined />}
             message={
-              searchedNow
+              searchId
                 ? '검색했지만 후보가 없어요. 유사도 기준을 낮추거나 기준 사진을 바꿔 다시 검색하세요'
                 : '아직 후보가 없어요. 후보 검색을 시작하세요'
             }
-            actionLabel={readOnly ? undefined : searchedNow ? '다시 검색' : '후보 검색'}
-            onAction={() =>
-              runSearch.mutate(undefined, {
-                onError: (e) =>
-                  message.error(isApiError(e) ? e.detail : '검색을 시작하지 못했어요.'),
-              })
-            }
+            actionLabel={readOnly ? undefined : searchId ? '다시 검색' : '후보 검색'}
+            onAction={startSearch}
+          />
+        </Center>
+      );
+    }
+    if (!searchId || stale) {
+      return (
+        <Center>
+          <EmptyState
+            icon={<SearchOutlined />}
+            message={`${anchorLabel} 구간을 검색해 다음 장면을 찾으세요`}
+            actionLabel={readOnly ? undefined : '다음 구간 검색'}
+            onAction={startSearch}
           />
         </Center>
       );
@@ -348,9 +417,7 @@ export function RouteTrackingPage() {
             className="num"
             style={{ fontWeight: 400, fontSize: 12, color: 'rgba(0,0,0,0.55)' }}
           >
-            {route?.scenes.length
-              ? `${route.scenes.at(-1)!.scene.cameraCode} ${formatTime(route.scenes.at(-1)!.scene.startAt)} 이후 · 도보 가능`
-              : ''}
+            {lastConfirmed ? `${anchorLabel} · 도보 가능` : ''}
           </span>
         </span>
       }
@@ -364,7 +431,7 @@ export function RouteTrackingPage() {
           threshold={query.threshold}
           activeId={current?.id ?? null}
           onSelect={onPick}
-          dimmed={searching}
+          dimmed={searching || stale}
         />
       ) : (
         <div style={{ padding: 16, fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
@@ -374,10 +441,10 @@ export function RouteTrackingPage() {
     </Card>
   );
 
-  const lastSeen =
-    caseView?.lastSeenAt && caseView.lastSeenCameraCode
-      ? ` · 마지막 목격 ${caseView.lastSeenCameraCode} ${formatTime(caseView.lastSeenAt)} (${formatElapsedSince(caseView.lastSeenAt, now)})`
-      : '';
+  // 마지막 확정 목격은 사건 응답에 없어서 동선에서 가져온다
+  const lastSeen = lastConfirmed
+    ? ` · 마지막 목격 ${lastConfirmed.scene.cameraCode} ${formatTime(lastConfirmed.scene.startAt)} (${formatElapsedSince(lastConfirmed.scene.startAt, now)})`
+    : '';
 
   return (
     <>
@@ -385,7 +452,7 @@ export function RouteTrackingPage() {
         title="동선 추적"
         summary={
           caseView
-            ? `확정 ${caseView.confirmedCount} · 확인 대기 ${caseView.pendingCount}${lastSeen}`
+            ? `확정 ${caseView.confirmedCount} · 확인 대기 ${caseView.pendingCount ?? '—'}${lastSeen}`
             : undefined
         }
         extra={
@@ -407,15 +474,16 @@ export function RouteTrackingPage() {
           caseId={caseId}
           query={query}
           readOnly={readOnly}
-          searchTask={searchTask}
+          searchTask={searching ? (searchTask ?? undefined) : undefined}
           embedTask={embedTask}
           onUpload={openUpload}
+          anchorDecisionId={anchorDecisionId}
         />
       )}
       <input
         ref={fileInput}
         type="file"
-        accept="image/jpeg,image/png"
+        accept="image/jpeg,image/png,image/webp"
         hidden
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -437,7 +505,38 @@ export function RouteTrackingPage() {
           padding: '12px 16px 0',
         }}
       >
-        {result && !searching && (
+        {stale && !searching && !readOnly && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 8 }}
+            message="기준이 바뀌어 이 검색 결과로는 판단할 수 없어요. 다시 검색하세요."
+            action={
+              <Button
+                size="small"
+                type="primary"
+                loading={runSearch.isPending}
+                onClick={startSearch}
+              >
+                다시 검색
+              </Button>
+            }
+          />
+        )}
+        {newerSearch && !searching && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 8 }}
+            message="공동 담당자가 새로 검색했어요."
+            action={
+              <Button size="small" onClick={() => setSearchId(caseId, latestSearchId)}>
+                새 결과 보기
+              </Button>
+            }
+          />
+        )}
+        {result && !searching && !stale && (
           <Alert
             type="info"
             showIcon
@@ -450,8 +549,7 @@ export function RouteTrackingPage() {
                 {result.cameraCount
                   ? ` 도보로 갈 수 있는 카메라 ${result.cameraCount}대에서`
                   : ''}{' '}
-                후보 <b>{result.total}개</b>를 찾았어요 (기준 이상 {result.above} · 기준 미만{' '}
-                {result.below}) ·{' '}
+                후보 <b>{result.total}개</b>를 찾았어요 ·{' '}
                 {result.newIds.length ? (
                   <b>새 후보 {result.newIds.length}개</b>
                 ) : (
@@ -478,6 +576,7 @@ export function RouteTrackingPage() {
               <TrackingMap
                 caseId={caseId}
                 route={route}
+                pending={current && !current.outOfFilter ? current : null}
                 activeCameraId={current?.scene.cameraId ?? null}
               />
             )}
@@ -497,6 +596,7 @@ export function RouteTrackingPage() {
                 <TrackingMap
                   caseId={caseId}
                   route={route}
+                  pending={current && !current.outOfFilter ? current : null}
                   activeCameraId={current?.scene.cameraId ?? null}
                   mini
                 />
@@ -525,7 +625,10 @@ export function RouteTrackingPage() {
                 label: '타임라인',
                 children: (
                   <div style={{ height: BOTTOM_HEIGHT - 90, overflow: 'auto' }}>
-                    <TimelineTab route={route} />
+                    <TimelineTab
+                      route={route}
+                      pending={!stale && current && !current.outOfFilter ? current : null}
+                    />
                   </div>
                 ),
               },
@@ -537,7 +640,7 @@ export function RouteTrackingPage() {
                     <DecisionLog
                       decisions={decisions}
                       onRevert={onRevert}
-                      revertingId={revert.isPending ? (revert.variables ?? null) : null}
+                      revertingId={revert.isPending ? (revert.variables?.decisionId ?? null) : null}
                       readOnly={readOnly}
                       loading={decisionsLoading}
                     />

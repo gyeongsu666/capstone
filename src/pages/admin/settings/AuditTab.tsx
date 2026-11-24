@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { DatePicker, Select, Space, Table, Tag, type TableProps } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { useAuditLogs, useUsers } from '@/api/admin';
-import { useCaseList } from '@/api/cases';
+import { useAllCases } from '@/api/cases';
 import type { AuditActionView, AuditLogView } from '@/api/view';
 import { formatDateTime } from '@/utils/format';
 
@@ -28,8 +28,7 @@ export function AuditTab() {
   const [action, setAction] = useState<AuditActionView>();
   const [page, setPage] = useState(1);
   const { data: users } = useUsers({ q: '', page: 1 });
-  const { data: openCases } = useCaseList({ closed: false, q: '', page: 1, size: 100 });
-  const { data: closedCases } = useCaseList({ closed: true, q: '', page: 1, size: 100 });
+  const { data: allCases } = useAllCases();
   const { data, isLoading } = useAuditLogs({
     from: range?.[0]?.startOf('day').format('YYYY-MM-DDTHH:mm:ssZ'),
     to: range?.[1]?.endOf('day').format('YYYY-MM-DDTHH:mm:ssZ'),
@@ -39,7 +38,7 @@ export function AuditTab() {
     page,
   });
   const reset = () => setPage(1);
-  const cases = [...(openCases?.items ?? []), ...(closedCases?.items ?? [])];
+  const cases = allCases ?? [];
 
   const columns: TableProps<AuditLogView>['columns'] = [
     {
@@ -99,7 +98,7 @@ export function AuditTab() {
             setCaseId(v);
             reset();
           }}
-          options={cases.map((c) => ({ value: c.id, label: `${c.caseNo} ${c.personName}` }))}
+          options={cases.map((c) => ({ value: c.id, label: `#${c.id} ${c.title}` }))}
         />
         <Select
           allowClear

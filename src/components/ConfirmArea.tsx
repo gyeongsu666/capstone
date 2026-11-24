@@ -24,6 +24,8 @@ interface ConfirmAreaProps {
   decidedBy?: { name: string; verdict: VerdictView } | null;
   /** 종료된 사건 등 */
   readOnly?: boolean;
+  /** 판단할 수 없는 이유(기본: 종료된 사건) */
+  readOnlyReason?: string;
   /** 남은 확인 개수 */
   remaining?: number;
   /** 지도 모드에서 작게 */
@@ -44,6 +46,7 @@ export function ConfirmArea({
   pending = null,
   decidedBy = null,
   readOnly = false,
+  readOnlyReason = '종료된 사건이라 판단할 수 없어요.',
   remaining,
   compact = false,
   shortcuts = true,
@@ -131,7 +134,7 @@ export function ConfirmArea({
             }
           />
         ) : readOnly ? (
-          <Alert type="warning" showIcon message="종료된 사건이라 판단할 수 없어요." />
+          <Alert type="warning" showIcon message={readOnlyReason} />
         ) : (
           <>
             <div style={{ display: 'flex', gap: 8 }}>

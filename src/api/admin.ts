@@ -1,43 +1,44 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { request } from '@/api/client';
+import { isApiError, request } from '@/api/client';
 import { queryKeys } from '@/api/queryKeys';
+import { idServer, pointServer, polygonServer } from '@/api/convert';
+import type { S, ServerSystemSettings, ServerSystemSettingsPatch } from '@/api/server';
 import type {
   AuditLog,
-  Camera,
-  DangerZone,
   Page,
   PendingDeletion,
   ResetPasswordResponse,
   Retention,
-  Settings,
   TaskAccepted,
-  TargetType,
   User,
   UserCreateResponse,
   VideoAccepted,
   VideoPage,
-  WalkEdge,
 } from '@/api/types';
 import {
+  fromServerSettingsForm,
   toAuditActionServer,
   toAuditLogView,
   toPageView,
   toPendingDeletionView,
   toRetentionView,
   toRoleServer,
-  toSettingsFormView,
   toUserView,
   toVideoPageView,
   type AuditActionView,
+  type DangerKindView,
   type LatLngView,
+  type PersonTypeView,
   type RetentionView,
   type RoleView,
   type SettingsFormView,
+  type SeverityView,
 } from '@/api/view';
 
 // ---------- 카메라·도보 경로·위험 지역 ----------
 
 export interface CameraInput {
+  /** 짧은 코드(C3). 서버에는 이름 앞에 붙여 "C3 학생회관"으로 보낸다 */
   code: string;
   name: string;
   location: LatLngView;
@@ -45,20 +46,11 @@ export interface CameraInput {
   fovDeg: number;
 }
 
-const cameraBody = (v: Partial<CameraInput>) => ({
-  code: v.code,
-  name: v.name,
-  location: v.location,
-  direction_deg: v.directionDeg,
-  fov_deg: v.fovDeg,
-});
+const cameraName = (code: string | undefined, name: string | undefined) =>
+  [code?.trim().toUpperCase(), name?.trim()].filter(Boolean).join(' ') || undefined;
 
 /** 다각형(화면) → GeoJSON Polygon([lng, lat], 닫힌 고리) */
-export function toGeoJsonPolygon(poly: LatLngView[]) {
-  const ring = poly.map((p) => [p.lng, p.lat]);
-  if (ring.length) ring.push([...ring[0]]);
-  return { type: 'Polygon' as const, coordinates: [ring] };
-}
+export const toGeoJsonPolygon = polygonServer;
 
 function useInvalidateMap() {
   const qc = useQueryClient();
@@ -68,7 +60,16 @@ function useInvalidateMap() {
 export function useCreateCamera() {
   const invalidate = useInvalidateMap();
   return useMutation({
-    mutationFn: (v: CameraInput) => request<Camera>('POST', '/cameras', { body: cameraBody(v) }),
+    mutationFn: (v: CameraInput) =>
+      request<S['CameraCreated']>('POST', '/cameras', {
+        body: {
+          kind: 'camera',
+          name: cameraName(v.code, v.name)!,
+          location: pointServer(v.location),
+          direction_deg: v.directionDeg,
+          field_of_view_deg: v.fovDeg,
+        } satisfies S['CameraCreateRequest'],
+      }),
     onSuccess: invalidate,
   });
 }
@@ -76,8 +77,17 @@ export function useCreateCamera() {
 export function useUpdateCamera() {
   const invalidate = useInvalidateMap();
   return useMutation({
-    mutationFn: ({ id, ...v }: Partial<CameraInput> & { id: string }) =>
-      request<Camera>('PATCH', `/cameras/${id}`, { body: cameraBody(v) }),
+    mutationFn: ({ id, version, ...v }: Partial<CameraInput> & { id: string; version: number }) =>
+      request<S['Camera']>('PATCH', `/cameras/${idServer(id)}`, {
+        body: {
+          name:
+            v.code !== undefined || v.name !== undefined ? cameraName(v.code, v.name) : undefined,
+          location: v.location ? pointServer(v.location) : undefined,
+          direction_deg: v.directionDeg,
+          field_of_view_deg: v.fovDeg,
+          expected_version: version,
+        } satisfies S['CameraPatch'],
+      }),
     onSuccess: invalidate,
   });
 }
@@ -85,23 +95,32 @@ export function useUpdateCamera() {
 export function useDeleteCamera() {
   const invalidate = useInvalidateMap();
   return useMutation({
-    mutationFn: (id: string) => request<void>('DELETE', `/cameras/${id}`),
+    mutationFn: (id: string) => request<S['DeletedResponse']>('DELETE', `/cameras/${idServer(id)}`),
     onSuccess: invalidate,
   });
 }
 
+/** 도보 경로 다시 계산(수동 보정한 구간은 건드리지 않음) */
 export function useRecalculateWalkEdges() {
   return useMutation({
-    mutationFn: () => request<TaskAccepted>('POST', '/walk-edges/recalculate'),
+    mutationFn: () =>
+      request<S['TaskAccepted']>('POST', '/walk-graph/recalculations', {
+        body: { include_manual: false } satisfies S['WalkRecalculateRequest'],
+      }),
   });
 }
 
+/** 구간 거리·시간 직접 수정(source=manual로 저장) */
 export function useCorrectWalkEdge() {
   const invalidate = useInvalidateMap();
   return useMutation({
-    mutationFn: (v: { id: string; distanceM: number | null; minutes: number | null }) =>
-      request<WalkEdge>('PATCH', `/walk-edges/${v.id}`, {
-        body: { corrected_distance_m: v.distanceM, corrected_minutes: v.minutes },
+    mutationFn: (v: { id: string; version: number; distanceM: number; minutes: number }) =>
+      request<S['WalkEdge']>('PATCH', `/walk-graph/${idServer(v.id)}`, {
+        body: {
+          distance_m: v.distanceM,
+          duration_s: v.minutes * 60,
+          expected_version: v.version,
+        } satisfies S['WalkEdgePatch'],
       }),
     onSuccess: invalidate,
   });
@@ -109,24 +128,24 @@ export function useCorrectWalkEdge() {
 
 export interface DangerZoneInput {
   name: string;
-  /** 실종자: 하천·공사장 / 범죄자: 인파 밀집 */
-  targetType: 'missing' | 'criminal';
+  kind: DangerKindView;
+  severity: SeverityView;
+  description?: string;
   polygon: LatLngView[];
 }
-
-const targetType = (t: DangerZoneInput['targetType']): TargetType =>
-  t === 'missing' ? 'MISSING' : 'CRIMINAL';
 
 export function useCreateDangerZone() {
   const invalidate = useInvalidateMap();
   return useMutation({
     mutationFn: (v: DangerZoneInput) =>
-      request<DangerZone>('POST', '/danger-zones', {
+      request<S['DangerZone']>('POST', '/danger-zones', {
         body: {
           name: v.name,
-          target_type: targetType(v.targetType),
-          area: toGeoJsonPolygon(v.polygon),
-        },
+          kind: v.kind,
+          severity: v.severity,
+          description: v.description,
+          geometry: polygonServer(v.polygon),
+        } satisfies S['DangerZoneCreateRequest'],
       }),
     onSuccess: invalidate,
   });
@@ -135,12 +154,11 @@ export function useCreateDangerZone() {
 export function useDeleteDangerZone() {
   const invalidate = useInvalidateMap();
   return useMutation({
-    mutationFn: (id: string) => request<void>('DELETE', `/danger-zones/${id}`),
+    mutationFn: (id: string) =>
+      request<S['DeletedResponse']>('DELETE', `/danger-zones/${idServer(id)}`),
     onSuccess: invalidate,
   });
 }
-
-// ---------- 녹화 영상 ----------
 
 export function useVideos(params: {
   status?: string;
@@ -197,30 +215,47 @@ export function useRetryVideo() {
 export function useSettingsForm() {
   return useQuery({
     queryKey: queryKeys.settings,
-    queryFn: () => request<Settings>('GET', '/settings'),
-    select: toSettingsFormView,
+    queryFn: () => request<ServerSystemSettings>('GET', '/settings'),
+    select: fromServerSettingsForm,
   });
 }
+
+export type SettingsFormInput = Omit<SettingsFormView, 'updatedAt'>;
 
 export function useSaveSettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: Omit<SettingsFormView, 'updatedAt' | 'updatedByName'>) =>
-      request<Settings>('PUT', '/settings', {
+    mutationFn: (v: SettingsFormInput) =>
+      request<ServerSystemSettings>('PATCH', '/settings', {
         body: {
-          walk_speed_mps: {
-            ADULT: v.walkSpeedMps.adult,
-            CHILD: v.walkSpeedMps.child,
-            ELDERLY: v.walkSpeedMps.elderly,
-          },
-          similarity_threshold_default: v.similarityThresholdDefault,
-          confirm_request_threshold: v.confirmRequestThreshold,
-          filter_margin_minutes: v.filterMarginMinutes,
-          out_of_filter_threshold: v.outOfFilterThreshold,
-          area_level_bounds: v.areaLevelBounds,
-        },
+          walking_speed_presets: (
+            Object.entries(v.walkSpeeds) as [
+              PersonTypeView,
+              SettingsFormInput['walkSpeeds']['adult'],
+            ][]
+          )
+            .filter(([, p]) => p.speedMps !== null && p.maxSpeedMps !== null)
+            .map(([t, p]) => ({
+              person_type: t,
+              speed_mps: p.speedMps!,
+              max_speed_mps: p.maxSpeedMps!,
+            })),
+          default_similarity_threshold: v.similarityThresholdDefault ?? undefined,
+          alert_high_threshold: v.alertHighThreshold ?? undefined,
+          // R5: 비우면 null을 보내 예외 기준을 해제한다
+          out_of_filter_threshold: v.outOfFilterThreshold ?? null,
+          area_level_ratios: [v.areaLevelRatios.high, v.areaLevelRatios.mid, 1],
+          area_buffer_m: v.areaBufferM ?? undefined,
+          max_upload_bytes: v.maxUploadMb === null ? undefined : v.maxUploadMb * 1_000_000,
+          expected_version: v.version,
+        } satisfies ServerSystemSettingsPatch,
       }),
     onSuccess: (s) => qc.setQueryData(queryKeys.settings, s),
+    // 버전 충돌: 최신 값을 다시 받는다(폼은 새 값으로 바뀌고, 사용자가 다시 저장한다)
+    onError: (e) => {
+      if (isApiError(e, 'VERSION_CONFLICT'))
+        void qc.invalidateQueries({ queryKey: queryKeys.settings });
+    },
   });
 }
 

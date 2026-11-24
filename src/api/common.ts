@@ -1,16 +1,25 @@
 import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { request } from '@/api/client';
+import { PAGE_LIMIT } from '@/api/convert';
 import { queryKeys } from '@/api/queryKeys';
-import type { Settings, Task, UserBrief } from '@/api/types';
-import { toPersonView, toSettingsView, toTaskView, type TaskView } from '@/api/view';
+import type { S, ServerSystemSettings } from '@/api/server';
+import {
+  fromServerSettings,
+  fromServerTask,
+  fromServerUserSummary,
+  type TaskView,
+} from '@/api/view';
 
 // ---------- 엔드포인트 ----------
 
-export const getTask = (taskId: string) => request<Task>('GET', `/tasks/${taskId}`);
-export const getSettings = () => request<Settings>('GET', '/settings');
-export const getUsersBrief = (q?: string) =>
-  request<UserBrief[]>('GET', '/users/brief', { query: { q } });
+export const getTask = (taskId: string) => request<S['Task']>('GET', `/tasks/${taskId}`);
+export const getSettings = () => request<ServerSystemSettings>('GET', '/settings');
+/** 공동 담당 추가용 계정 검색(활성 계정의 이름·아이디·역할만) */
+export const getUserDirectory = (query?: string) =>
+  request<S['UserDirectoryPage']>('GET', '/users/directory', {
+    query: { query, limit: PAGE_LIMIT },
+  });
 
 // ---------- 훅 ----------
 
@@ -19,7 +28,7 @@ export function useSettings() {
   return useQuery({
     queryKey: queryKeys.settings,
     queryFn: getSettings,
-    select: toSettingsView,
+    select: fromServerSettings,
     staleTime: 5 * 60_000,
   });
 }
@@ -28,8 +37,8 @@ export function useSettings() {
 export function useUsersBrief(q = '') {
   return useQuery({
     queryKey: queryKeys.usersBrief(q),
-    queryFn: () => getUsersBrief(q || undefined),
-    select: (list) => list.map(toPersonView),
+    queryFn: () => getUserDirectory(q || undefined),
+    select: (page) => page.items.map(fromServerUserSummary),
     staleTime: 60_000,
   });
 }
@@ -46,10 +55,10 @@ export function useTaskPolling(
     queryKey: queryKeys.task(taskId ?? ''),
     queryFn: () => getTask(taskId!),
     enabled: !!taskId,
-    select: toTaskView,
+    select: fromServerTask,
     refetchInterval: (q) => {
       const s = q.state.data?.status;
-      return s === 'SUCCESS' || s === 'FAILURE' ? false : 2500;
+      return s === 'done' || s === 'failed' ? false : 2500;
     },
   });
 

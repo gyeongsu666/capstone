@@ -1,9 +1,9 @@
 import { useState, useSyncExternalStore } from 'react';
 import { Button, Card, Divider, Popconfirm, Radio, Space, Switch, Typography } from 'antd';
 import { BugOutlined, CloseOutlined } from '@ant-design/icons';
-import { startSession } from '@/api/auth';
 import { control, type ForcedErrorStatus } from '@/mocks/control';
-import { addAudit, createSession, db, findUserByUsername, toUser } from '@/mocks/db';
+import { addAudit, createSession, db, findUserByUsername } from '@/mocks/db';
+import { clearSessionCookie, setSessionCookie } from '@/mocks/handlers/utils';
 import { useAuthStore } from '@/stores/auth';
 
 const ACCOUNTS = [
@@ -14,14 +14,13 @@ const ACCOUNTS = [
 
 const ERRORS: ForcedErrorStatus[] = [401, 403, 409, 500];
 
-/** 가짜 서버로 바로 로그인(비밀번호를 바꿨어도 전환 가능) */
+/** 가짜 서버로 바로 로그인(비밀번호를 바꿨어도 전환 가능). 새로고침하면 /auth/me로 세션을 다시 읽는다. */
 function switchAccount(username: string) {
   const user = findUserByUsername(username);
   if (!user) return;
-  const token = createSession(user.id);
+  setSessionCookie(createSession(user.id));
   addAudit(user.id, 'LOGIN', '로그인 (개발 패널 전환)');
   db.save();
-  startSession(token, toUser(user));
   window.location.assign('/cases');
 }
 
@@ -30,10 +29,10 @@ function resetData() {
   db.reset();
   const user = username ? findUserByUsername(username) : undefined;
   if (user) {
-    startSession(createSession(user.id), toUser(user));
+    setSessionCookie(createSession(user.id));
     db.save();
   } else {
-    useAuthStore.getState().clearSession('manual');
+    clearSessionCookie();
   }
   window.location.reload();
 }

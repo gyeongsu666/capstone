@@ -12,8 +12,11 @@ interface TrackingState {
   focused: CandidateView | null;
   /** 내가 방금 판단한 후보(공동 담당자 판단 안내에서 뺀다) */
   myDecidedIds: string[];
-  /** 사건별 진행 중인 후보 검색 작업 */
-  searchTask: Record<string, string | null>;
+  /**
+   * 사건별로 지금 보고 있는 검색(search_id). 없으면 사건의 최근 검색(latest_search)을 쓴다.
+   * 공동 담당자가 새 검색을 만들어도 판단 중인 화면을 바로 바꾸지 않는다.
+   */
+  searchId: Record<string, string | null>;
   /** 이번에 후보 검색을 끝낸 사건(검색했는데 후보가 없는 경우 안내용) */
   searchedCases: string[];
   /** 사건별 진행 중인 기준 사진 특징 추출 작업 */
@@ -22,7 +25,7 @@ interface TrackingState {
   select: (candidateId: string | null) => void;
   setFocused: (c: CandidateView | null) => void;
   addMyDecided: (candidateId: string) => void;
-  setSearchTask: (caseId: string, taskId: string | null) => void;
+  setSearchId: (caseId: string, searchId: string | null) => void;
   setEmbedTask: (caseId: string, taskId: string | null) => void;
   markSearched: (caseId: string) => void;
 }
@@ -33,15 +36,15 @@ export const useTrackingStore = create<TrackingState>((set) => ({
   selectedCandidateId: null,
   focused: null,
   myDecidedIds: [],
-  searchTask: {},
+  searchId: {},
   embedTask: {},
   searchedCases: [],
   setMode: (mode) => set({ mode }),
   select: (selectedCandidateId) => set({ selectedCandidateId }),
   setFocused: (focused) => set({ focused }),
   addMyDecided: (id) => set((s) => ({ myDecidedIds: [...s.myDecidedIds.slice(-50), id] })),
-  setSearchTask: (caseId, taskId) =>
-    set((s) => ({ searchTask: { ...s.searchTask, [caseId]: taskId } })),
+  setSearchId: (caseId, searchId) =>
+    set((s) => ({ searchId: { ...s.searchId, [caseId]: searchId } })),
   setEmbedTask: (caseId, taskId) =>
     set((s) => ({ embedTask: { ...s.embedTask, [caseId]: taskId } })),
   markSearched: (caseId) =>

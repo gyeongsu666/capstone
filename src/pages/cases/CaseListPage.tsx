@@ -14,8 +14,6 @@ import { statusColor } from '@/theme';
 import { closeReasonLabel, formatDateTime, formatElapsedSince } from '@/utils/format';
 import { useNow } from '@/utils/useNow';
 
-const PAGE_SIZE = 20;
-
 /** 입력이 멈춘 뒤 값 반영 */
 function useDebounced<T>(value: T, ms = 300) {
   const [v, setV] = useState(value);
@@ -33,33 +31,38 @@ export function CaseListPage() {
   const now = useNow();
   const [closed, setClosed] = useState(false);
   const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const q = useDebounced(search.trim());
 
-  const { data, isLoading, isFetching, error, refetch } = useCaseList({
-    closed,
-    q,
-    page,
-    size: PAGE_SIZE,
-  });
+  const {
+    items,
+    isLoading,
+    isFetching,
+    error,
+    refetch,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useCaseList({ closed, q });
 
   const open = (c: CaseView) => navigate(`/cases/${c.id}/tracking`);
 
   const columns: TableProps<CaseView>['columns'] = [
     {
-      title: '사건 번호',
-      key: 'no',
-      width: 110,
+      title: '사건',
+      key: 'title',
+      width: 200,
       render: (_, c) => (
         <a
-          className="num"
           onClick={(e) => {
             e.stopPropagation();
             open(c);
           }}
         >
-          {c.caseNo}
+          <span className="num" style={{ color: 'rgba(0,0,0,0.45)' }}>
+            #{c.id}{' '}
+          </span>
+          {c.title}
         </a>
       ),
     },
@@ -77,7 +80,7 @@ export function CaseListPage() {
       ),
     },
     {
-      title: '실종 시각',
+      title: '마지막 목격',
       key: 'missingAt',
       width: 120,
       render: (_, c) => <span className="num">{formatDateTime(c.missingAt)}</span>,
@@ -103,7 +106,12 @@ export function CaseListPage() {
       render: (_, c) => (
         <span className="num" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <span style={{ color: statusColor.confirmed }}>확정 {c.confirmedCount}</span>
-          {c.pendingCount > 0 ? (
+          {c.pendingCount === null ? (
+            // 최근 검색이 없거나 진행 중·낡음(R1: null은 0과 다르다)
+            <Tooltip title="최근 검색 결과가 없거나 다시 검색해야 해요.">
+              <span style={{ color: 'rgba(0,0,0,0.45)' }}>· 대기 —</span>
+            </Tooltip>
+          ) : c.pendingCount > 0 ? (
             <Tag color="orange" style={{ margin: 0 }}>
               확인 대기 {c.pendingCount}
             </Tag>
@@ -114,17 +122,11 @@ export function CaseListPage() {
       ),
     },
     {
-      title: '마지막 목격',
-      key: 'lastSeen',
-      width: 120,
+      title: '마지막 목격 장소',
+      key: 'place',
+      width: 150,
       render: (_, c) =>
-        c.lastSeenAt ? (
-          <span className="num">
-            {c.lastSeenCameraCode} {formatDateTime(c.lastSeenAt).slice(6)}
-          </span>
-        ) : (
-          <span style={{ color: 'rgba(0,0,0,0.45)' }}>없음</span>
-        ),
+        c.lastSeenPlace.name ?? <span style={{ color: 'rgba(0,0,0,0.45)' }}>—</span>,
     },
     {
       title: '담당자',
@@ -146,16 +148,17 @@ export function CaseListPage() {
     },
   ];
 
-  const total = data?.total ?? 0;
+  // 전체 개수는 서버가 주지 않는다(cursor 목록). 지금까지 받은 수만 쓴다.
+  const loaded = items.length;
 
   return (
     <>
       <PageHeader
         title="사건 목록"
         summary={
-          data
-            ? `${closed ? '종료' : '진행 중'} ${total}건${isAdmin ? ' · 전체 사건' : ' · 맡은 사건'}`
-            : undefined
+          isLoading
+            ? undefined
+            : `${closed ? '종료' : '진행 중'}${isAdmin ? ' · 전체 사건' : ' · 맡은 사건'}`
         }
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
@@ -170,7 +173,6 @@ export function CaseListPage() {
               activeKey={closed ? 'closed' : 'open'}
               onChange={(k) => {
                 setClosed(k === 'closed');
-                setPage(1);
               }}
               items={[
                 { key: 'open', label: '진행 중' },
@@ -180,12 +182,9 @@ export function CaseListPage() {
             />
             <Input.Search
               allowClear
-              placeholder="사건 번호·실종자 이름"
+              placeholder="사건 제목·실종자 이름·번호"
               value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
+              onChange={(e) => setSearch(e.target.value)}
               style={{ width: 260 }}
             />
           </div>
@@ -198,7 +197,7 @@ export function CaseListPage() {
               description={isApiError(error) ? error.detail : undefined}
               action={<Button onClick={() => refetch()}>다시 시도</Button>}
             />
-          ) : !isLoading && total === 0 && !q ? (
+          ) : !isLoading && loaded === 0 && !q ? (
             closed ? (
               <EmptyState message="종료된 사건이 없어요." />
             ) : (
@@ -215,18 +214,22 @@ export function CaseListPage() {
             <Table<CaseView>
               rowKey="id"
               columns={columns}
-              dataSource={data?.items}
-              loading={isLoading || isFetching}
+              dataSource={items}
+              loading={isLoading || (isFetching && !isFetchingNextPage)}
               onRow={(c) => ({ onClick: () => open(c), style: { cursor: 'pointer' } })}
               locale={{ emptyText: `"${q}"에 맞는 사건이 없어요.` }}
-              pagination={{
-                current: page,
-                pageSize: PAGE_SIZE,
-                total,
-                onChange: setPage,
-                hideOnSinglePage: true,
-                showSizeChanger: false,
-              }}
+              pagination={false}
+              footer={
+                hasNextPage
+                  ? () => (
+                      <div style={{ textAlign: 'center' }}>
+                        <Button loading={isFetchingNextPage} onClick={() => fetchNextPage()}>
+                          더 보기
+                        </Button>
+                      </div>
+                    )
+                  : undefined
+              }
             />
           )}
         </Card>

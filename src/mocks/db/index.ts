@@ -1,7 +1,14 @@
 // 가짜 DB: 메모리 + localStorage. 새로고침해도 유지된다.
 import type { Case, User, UserBrief } from '@/api/types';
+import type { ServerUser } from '@/api/server';
 import { createScenario } from '@/mocks/scenario';
-import { DB_VERSION, type DbCase, type DbState, type DbUser } from '@/mocks/db/schema';
+import {
+  DB_VERSION,
+  type DbCase,
+  type DbSession,
+  type DbState,
+  type DbUser,
+} from '@/mocks/db/schema';
 import { nowKst } from '@/mocks/db/time';
 
 const STORAGE_KEY = 'refind-mock-db';
@@ -86,6 +93,21 @@ export function toCase(c: DbCase): Case {
   };
 }
 
+/** 내부 문자열 id → 서버 모양의 10진수 문자열 id(bigserial). 처음 부를 때 정해진다 */
+export function pubId(internal: string): string {
+  const ids = state.public_ids;
+  if (!ids.map[internal]) {
+    ids.map[internal] = String(ids.next++);
+    db.save();
+  }
+  return ids.map[internal];
+}
+
+/** 서버 모양 id → 내부 id(없으면 undefined) */
+export function fromPubId(pub: string): string | undefined {
+  return Object.keys(state.public_ids.map).find((k) => state.public_ids.map[k] === pub);
+}
+
 /** 이용 기록 추가(서버가 자동으로 남기는 것과 같은 역할) */
 export function addAudit(
   userId: string,
@@ -103,9 +125,29 @@ export function addAudit(
   });
 }
 
-/** 토큰 발급. 개발 패널의 계정 빠른 전환도 이 함수를 쓴다. */
-export function createSession(userId: string) {
-  const token = `mock.${newId('tok')}`;
-  state.sessions.push({ token, user_id: userId, last_used_at: Date.now() });
-  return token;
+/** 세션 발급. 개발 패널의 계정 빠른 전환도 이 함수를 쓴다. */
+export function createSession(userId: string): DbSession {
+  const session: DbSession = {
+    id: newId('sess'),
+    csrf_token: newId('csrf'),
+    user_id: userId,
+    last_used_at: Date.now(),
+  };
+  state.sessions.push(session);
+  return session;
+}
+
+/** 백엔드 openapi.json 모양의 User */
+export function toServerUser(u: DbUser): ServerUser {
+  return {
+    user_id: Number(u.id),
+    username: u.username,
+    display_name: u.name,
+    role: u.role === 'ADMIN' ? 'admin' : 'user',
+    active: u.active,
+    must_change_password: u.must_change_password,
+    created_at: u.created_at,
+    updated_at: u.created_at,
+    version: 1,
+  };
 }

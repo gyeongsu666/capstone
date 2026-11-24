@@ -4,13 +4,13 @@ import { Alert, Button, Card, Form, Input, Typography } from 'antd';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useChangePassword, useLogin, useLogout } from '@/api/auth';
 import { isApiError } from '@/api/client';
-import type { LoginRequest } from '@/api/types';
+import type { ServerLoginRequest as LoginRequest } from '@/api/server';
 import { useAuthStore } from '@/stores/auth';
 import { layoutColor } from '@/theme';
 
 const loginErrorMessage = (e: unknown) => {
   if (isApiError(e, 'INVALID_CREDENTIALS')) return '아이디 또는 비밀번호가 맞지 않아요.';
-  if (isApiError(e, 'ACCOUNT_DISABLED')) return '비활성화된 계정이에요. 관리자에게 문의하세요.';
+  if (isApiError(e, 'ACCOUNT_INACTIVE')) return '비활성화된 계정이에요. 관리자에게 문의하세요.';
   if (isApiError(e)) return e.detail;
   return '로그인하지 못했어요. 잠시 뒤 다시 시도하세요.';
 };
@@ -21,7 +21,7 @@ export function LoginPage() {
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from;
 
-  const token = useAuthStore((s) => s.token);
+  const status = useAuthStore((s) => s.status);
   const user = useAuthStore((s) => s.user);
   const logoutReason = useAuthStore((s) => s.logoutReason);
 
@@ -30,11 +30,11 @@ export function LoginPage() {
 
   const goNext = () => navigate(from && from !== '/login' ? from : '/cases', { replace: true });
 
-  if (token && user && !user.must_change_password) {
+  if (status === 'authenticated' && user && !user.mustChangePassword) {
     return <Navigate to={from && from !== '/login' ? from : '/cases'} replace />;
   }
 
-  const mustChange = !!(token && user?.must_change_password);
+  const mustChange = status === 'authenticated' && !!user?.mustChangePassword;
 
   return (
     <div
@@ -185,8 +185,11 @@ function PasswordChangeForm({
       <Form.Item
         name="new_password"
         label="새 비밀번호"
-        extra="8자 이상, 영문과 숫자를 모두 넣어 주세요."
-        rules={[{ required: true, message: '새 비밀번호를 입력하세요.' }]}
+        extra="10~128자, 지금 비밀번호와 다르게 써 주세요."
+        rules={[
+          { required: true, message: '새 비밀번호를 입력하세요.' },
+          { min: 10, max: 128, message: '10~128자로 입력하세요.' },
+        ]}
       >
         <Input.Password autoComplete="new-password" autoFocus />
       </Form.Item>

@@ -1,6 +1,7 @@
 // 가짜 지도 데이터: 국립목포대학교 도림캠퍼스(무안군 청계면) 실제 건물 앞에 카메라를 둔다.
 // 건물 좌표는 카카오 장소 검색 결과(2026-11-16). 카메라 방향·화각·도보 구간은 임시값이다.
-import type { Camera, DangerZone, LatLng, WalkEdge } from '@/api/types';
+import type { Camera, LatLng, WalkEdge } from '@/api/types';
+import type { DbDangerZone } from '@/mocks/db/schema';
 import { offset } from '@/map/geo';
 import { crossArea, distanceM, toPolygon } from '@/mocks/scenario/geometry';
 
@@ -47,8 +48,9 @@ const FIXED: CameraSeed[] = [
   { code: 'C12', name: '한울관 앞', pos: { lat: 34.9103, lng: 126.44087 }, dir: 270, fov: 65 },
 ];
 
-export const cameraId = (code: string) => `cam-${code.toLowerCase()}`;
-export const CASE_CAMERA_ID = 'cam-case-031-1';
+// 백엔드 node_id·camera_id는 정수. 가짜 DB는 숫자 문자열로 둔다(C3 → '3', 사건 영상 카메라 P1 → '101').
+export const cameraId = (code: string) => String(Number(code.replace(/^[A-Z]+/, '')));
+export const CASE_CAMERA_ID = '101';
 
 export function createCameras(mainCaseId: string): Camera[] {
   const fixed: Camera[] = FIXED.map((c) => ({
@@ -88,13 +90,16 @@ export const cameraPos = (code: string) => {
 };
 
 /** 위험 지역: 캠퍼스 남쪽 도림제(저수지) 둘레 */
-export function createDangerZones(): DangerZone[] {
+export function createDangerZones(): DbDangerZone[] {
   const center = { lat: 34.90453, lng: 126.43489 };
   return [
     {
-      id: 'zone-reservoir',
+      id: '1',
       name: '도림제(저수지)',
-      target_type: 'MISSING',
+      kind: 'water',
+      severity: 'high',
+      description: '캠퍼스 남쪽 저수지. 둘레 산책로와 바로 붙어 있다.',
+      version: 1,
       area: toPolygon(
         Array.from({ length: 10 }, (_, i) => offset(center, i * 36, i % 2 === 0 ? 190 : 150)),
       ),
@@ -131,7 +136,7 @@ const WALK_MPS = 1.2;
 const DETOUR_FACTOR = 1.3;
 
 export function createWalkEdges(): WalkEdge[] {
-  return EDGE_PAIRS.map(([a, b]) => {
+  return EDGE_PAIRS.map(([a, b], i) => {
     const from = cameraPos(a);
     const to = cameraPos(b);
     let path: LatLng[] = [from, to];
@@ -155,7 +160,7 @@ export function createWalkEdges(): WalkEdge[] {
     }
 
     return {
-      id: `edge-${a.toLowerCase()}-${b.toLowerCase()}`,
+      id: String(i + 1),
       from_camera_id: cameraId(a),
       to_camera_id: cameraId(b),
       api_distance_m: Math.round(distance),

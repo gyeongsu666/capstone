@@ -7,7 +7,7 @@ CCTV 기반 실종자 동선 추적 시스템(캡스톤디자인)의 웹 프론�
 작업 전에 관련 문서를 읽는다. 문서와 이 파일이 다르면 **문서가 우선**이고, 문서끼리 다르면 아래 순서가 우선이다.
 
 1. `docs/design.md` — 레이아웃, 색, 글꼴, 지도 표현, 공통 부품, 화면별 배치
-2. `docs/api-spec.md` — 모든 API의 주소, 메서드, 요청·응답 필드, 에러, 권한
+2. API: 백엔드 `openapi/openapi.json`(주소·필드·에러·권한의 기본 계약, 백엔드 `docs` 브랜치에서 복사) + `docs/backend-api-final-requests.md`(추가 요청 R1~R7과 프론트 정책 확정안)
 3. `docs/mock-scenario.md` — MSW 가짜 데이터와 시나리오, 개발 패널
 4. `docs/requirements.md` — 기능 요구사항(SYS00~02 번호의 출처)
 5. `docs/mockups/*.png` — 시안 두 장. 레이아웃 참고용. 색과 일부 배치는 `docs/design.md`의 "시안에서 바뀌는 점"을 따른다
@@ -62,7 +62,7 @@ public/mock/    가짜 썸네일, 영상
 **API 계층**
 
 - 서버 호출은 `src/api`에서만 한다. 컴포넌트와 페이지는 `src/api`의 훅만 쓴다. 명세가 바뀌어도 `src/api`만 고치면 되게 한다.
-- 임시 타입은 `src/api/types.ts`에 `docs/api-spec.md`와 **같은 이름·같은 snake_case 필드**로 쓴다. 백엔드 `/openapi.json`이 나오면 openapi-typescript로 생성한 타입으로 바꾼다.
+- 서버 타입은 `openapi/openapi.json`에서 생성한 `src/api/generated/schema.d.ts`(`npm run gen:api`)를 `src/api/server.ts`로 쓴다. 아직 openapi.json에 없는 R1~R7 필드는 `src/api/server.ts`에 덧붙인다. 옛 `src/api/types.ts`는 아직 옮기지 않은 영역(가짜 DB 포함)만 쓴다.
 - 오래 걸리는 작업은 `202 + task_id` → `GET /api/tasks/{task_id}`를 2~3초 간격 폴링(TanStack Query `refetchInterval`). 작업이 끝나면 관련 쿼리를 무효화한다.
 - 출현 알림(`/cases/{id}/alerts`, `/alerts/unread-count`)도 폴링. WebSocket·SSE 쓰지 않는다.
 - 인증: 로그인 응답의 `access_token`을 저장하고 모든 요청에 `Authorization: Bearer` 헤더. 401이면 로그인 화면으로, 403이면 권한 없음 안내.
@@ -70,7 +70,7 @@ public/mock/    가짜 썸네일, 영상
 
 **MSW**
 
-- `VITE_USE_MOCK=true`일 때만 켠다. 핸들러 주소와 응답 모양은 `docs/api-spec.md`와 정확히 같게.
+- `VITE_USE_MOCK=true`일 때만 켠다. 핸들러 주소와 응답 모양은 openapi.json(+ 확정안 R1~R7)과 정확히 같게.
 - 가짜 서버도 권한을 검사한다(역할, 맡은 사건). 화면에서만 숨기지 않는다.
 - 모든 응답에 300~800ms 지연, 작업은 progress가 단계적으로 오른다. 실제 서버와 비슷한 조건에서 로딩·에러 화면이 만들어지게 한다.
 - 시나리오, 계정, 개발 패널은 `docs/mock-scenario.md`대로.
@@ -101,7 +101,7 @@ public/mock/    가짜 썸네일, 영상
 - `.env.local`과 카카오 키 커밋
 - 실제 CCTV 영상, 인터넷에서 받은 사람 사진 사용
 - `src/api` 밖에서 fetch 호출
-- 문서에 없는 API를 마음대로 추가. 필요하면 먼저 사용자에게 묻고, 추가했다면 `docs/api-spec.md`에도 반영 제안
+- 문서에 없는 API를 마음대로 추가. 필요하면 먼저 사용자에게 묻고, 추가했다면 `docs/backend-api-final-requests.md`에도 반영 제안
 
 ## 작업 순서
 

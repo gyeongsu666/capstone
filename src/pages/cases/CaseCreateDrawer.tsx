@@ -22,8 +22,9 @@ import { useAuthStore } from '@/stores/auth';
 import { walkSpeedViewLabel } from '@/utils/format';
 
 interface FormValues {
+  title: string;
   personName: string;
-  age: number;
+  age: number | null;
   description: string;
   missingAt: Dayjs;
   location: LatLngView;
@@ -32,9 +33,8 @@ interface FormValues {
   memberIds: string[];
 }
 
-/** 나이로 보행 속도 추천: 13세 미만 어린이, 70세 이상 노인 */
-const suggestWalkSpeed = (age: number): WalkSpeedPresetView =>
-  age < 13 ? 'child' : age >= 70 ? 'elderly' : 'adult';
+/** 사건 제목 기본 제안 */
+const suggestTitle = (name: string) => (name.trim() ? `${name.trim()} 실종` : '');
 
 /** 사건 등록(오른쪽 폼). 저장하면 동선 추적으로 이동. */
 export function CaseCreateDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -57,19 +57,30 @@ export function CaseCreateDrawer({ open, onClose }: { open: boolean; onClose: ()
   const submit = (v: FormValues) => {
     create.mutate(
       {
+        title: v.title.trim(),
         personName: v.personName.trim(),
-        age: v.age,
+        age: v.age ?? null,
         description: v.description.trim(),
         missingAt: v.missingAt.format('YYYY-MM-DDTHH:mm:ssZ'),
-        lastSeenPlace: { name: v.placeName.trim(), location: v.location },
-        walkSpeed: v.walkSpeed,
+        lastSeenPlace: { name: v.placeName?.trim() ?? '', location: v.location },
+        personType: v.walkSpeed,
         memberIds: v.memberIds ?? [],
       },
       {
-        onSuccess: (c) => {
-          message.success(`사건 ${c.case_no}을 등록했어요.`);
+        onSuccess: ({ caseData, failedMemberIds }) => {
+          message.success(`사건 "${caseData.title}"을 등록했어요.`);
+          if (failedMemberIds.length) {
+            const names = failedMemberIds
+              .map((id) => users.find((u) => u.id === id)?.name ?? id)
+              .join(', ');
+            // 사건은 이미 만들어졌다. 다시 만들지 않고 담당자만 다시 추가하게 한다.
+            message.warning(
+              `${names}님을 담당자로 추가하지 못했어요. 사건 관리 > 담당자에서 다시 추가하세요.`,
+              6,
+            );
+          }
           close();
-          navigate(`/cases/${c.id}/tracking`);
+          navigate(`/cases/${caseData.case_id}/tracking`);
         },
       },
     );
@@ -98,13 +109,9 @@ export function CaseCreateDrawer({ open, onClose }: { open: boolean; onClose: ()
         onFinish={submit}
         initialValues={{ missingAt: dayjs().second(0), walkSpeed: 'adult', memberIds: [] }}
         onValuesChange={(changed) => {
-          // 보행 속도를 직접 고르기 전에는 나이에 맞춰 추천
-          if (
-            'age' in changed &&
-            typeof changed.age === 'number' &&
-            !form.isFieldTouched('walkSpeed')
-          ) {
-            form.setFieldValue('walkSpeed', suggestWalkSpeed(changed.age));
+          // 제목을 직접 고치기 전에는 "{이름} 실종"으로 채운다
+          if ('personName' in changed && !form.isFieldTouched('title')) {
+            form.setFieldValue('title', suggestTitle(changed.personName ?? ''));
           }
         }}
       >
@@ -115,17 +122,21 @@ export function CaseCreateDrawer({ open, onClose }: { open: boolean; onClose: ()
             rules={[{ required: true, whitespace: true, message: '이름을 입력하세요.' }]}
             style={{ flex: 1 }}
           >
-            <Input placeholder="김OO" maxLength={30} />
+            <Input placeholder="김OO" maxLength={50} />
           </Form.Item>
-          <Form.Item
-            name="age"
-            label="나이"
-            rules={[{ required: true, message: '나이를 입력하세요.' }]}
-            style={{ width: 120, marginLeft: 12 }}
-          >
-            <InputNumber min={0} max={120} suffix="세" style={{ width: '100%' }} />
+          <Form.Item name="age" label="나이" style={{ width: 120, marginLeft: 12 }}>
+            <InputNumber min={0} max={150} precision={0} suffix="세" style={{ width: '100%' }} />
           </Form.Item>
         </Space.Compact>
+
+        <Form.Item
+          name="title"
+          label="사건 제목"
+          extra="이름을 넣으면 자동으로 채워져요. 고쳐도 돼요."
+          rules={[{ required: true, whitespace: true, message: '사건 제목을 입력하세요.' }]}
+        >
+          <Input placeholder="김OO 실종" maxLength={100} />
+        </Form.Item>
 
         <Form.Item
           name="description"
@@ -137,7 +148,7 @@ export function CaseCreateDrawer({ open, onClose }: { open: boolean; onClose: ()
 
         <Form.Item
           name="missingAt"
-          label="실종 시각"
+          label="마지막 목격 시각"
           rules={[
             { required: true, message: '실종 시각을 고르세요.' },
             {
@@ -174,23 +185,23 @@ export function CaseCreateDrawer({ open, onClose }: { open: boolean; onClose: ()
             cameras={cameras}
           />
         </Form.Item>
-        <Form.Item
-          name="placeName"
-          rules={[{ required: true, whitespace: true, message: '장소 이름을 입력하세요.' }]}
-          style={{ marginTop: -12 }}
-        >
-          <Input placeholder="장소 이름 (예: 도림캠퍼스 정문)" maxLength={50} />
+        <Form.Item name="placeName" style={{ marginTop: -12 }}>
+          <Input placeholder="장소 이름 (선택, 예: 도림캠퍼스 정문)" maxLength={200} />
         </Form.Item>
 
-        <Form.Item name="walkSpeed" label="보행 속도" extra="나이를 넣으면 자동으로 추천해요.">
+        <Form.Item
+          name="walkSpeed"
+          label="사람 유형 (보행 속도)"
+          extra="나이와 별개로 골라요. 이 유형의 보행 속도로 이동 범위를 계산해요."
+        >
           <Radio.Group optionType="button" buttonStyle="solid">
-            {(['adult', 'child', 'elderly'] as const).map((k) => (
+            {(['adult', 'child', 'elderly', 'other'] as const).map((k) => (
               <Radio.Button key={k} value={k}>
                 {walkSpeedViewLabel[k]}
                 {settings && (
                   <span className="num" style={{ fontSize: 12, opacity: 0.75 }}>
                     {' '}
-                    {settings.walkSpeedMps[k]} m/s
+                    {settings.walkSpeedMps[k] === null ? '미정' : `${settings.walkSpeedMps[k]} m/s`}
                   </span>
                 )}
               </Radio.Button>

@@ -54,7 +54,7 @@ export function WalkEdgeLayer({
                   }}
                 >
                   ⚠ 우회 의심 {label}
-                  {e.correctedMinutes === null ? ' · 보정 필요' : ''}
+                  {e.source === 'api' ? ' · 보정 필요' : ''}
                 </span>
               </CustomOverlayMap>
             )}

@@ -77,13 +77,15 @@ export function CameraPanel({
     if (isNew) {
       create.mutate(body, {
         onSuccess: (c) => {
-          message.success(`${c.code} 카메라를 등록했어요. 도보 경로는 "다시 계산"으로 반영하세요.`);
+          message.success(
+            `${c.camera.name} 카메라를 등록했어요. 도보 경로는 "다시 계산"으로 반영하세요.`,
+          );
           onDone();
         },
       });
     } else {
       update.mutate(
-        { id: camera.id, ...body },
+        { id: camera.id, version: camera.version, ...body },
         {
           onSuccess: () => {
             message.success(`${body.code} 카메라를 고쳤어요.`);

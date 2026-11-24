@@ -14,12 +14,12 @@ import {
 } from '@ant-design/icons';
 import { useLogout } from '@/api/auth';
 import { useCase } from '@/api/cases';
-import { toCaseCardView } from '@/api/view';
+import { fromServerCaseCard } from '@/api/view';
 import { CaseCard } from '@/components/CaseCard';
 import { useAuthStore } from '@/stores/auth';
 import { useCaseNavStore } from '@/stores/case';
 import { layoutColor, SIDER_COLLAPSED_WIDTH, SIDER_WIDTH } from '@/theme';
-import { roleLabel } from '@/utils/format';
+import { roleViewLabel } from '@/utils/format';
 
 type MenuItem = Required<MenuProps>['items'][number];
 
@@ -43,7 +43,7 @@ export function Sidebar({ collapsed, alertCount = 0, alertCaseIds = [] }: Sideba
   const caseId = routeCaseId ?? lastCaseId;
   const { data: caseData } = useCase(routeCaseId);
 
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'admin';
 
   // 동선 추적·현재 위치 수색은 사건 안의 화면. 지금 사건(없으면 마지막 사건)으로 이동한다.
   // 현재 위치 수색은 지금 사건에 알림이 없고 다른 사건에 있으면 그 사건으로 간다
@@ -175,13 +175,13 @@ export function Sidebar({ collapsed, alertCount = 0, alertCaseIds = [] }: Sideba
                 color: '#8fb8ff',
               }}
             >
-              {roleLabel[user.role]}
+              {roleViewLabel[user.role]}
             </span>
           )}
         </div>
 
         {!collapsed && caseData && (
-          <CaseCard caseData={toCaseCardView(caseData)} style={{ margin: '4px 12px 12px' }} />
+          <CaseCard caseData={fromServerCaseCard(caseData)} style={{ margin: '4px 12px 12px' }} />
         )}
 
         <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>

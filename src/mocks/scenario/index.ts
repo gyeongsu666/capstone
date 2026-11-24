@@ -11,8 +11,10 @@ import {
   createWalkEdges,
 } from '@/mocks/scenario/map';
 
-export const USER_IDS = { admin: 'u-admin', user1: 'u-user1', user2: 'u-user2' } as const;
-export const CASE_IDS = { main: 'case-031', second: 'case-032', closed: 'case-029' } as const;
+// 백엔드 user_id는 정수. 가짜 DB는 문자열로 두고 응답할 때 숫자로 바꾼다.
+export const USER_IDS = { admin: '1', user1: '2', user2: '3' } as const;
+// 백엔드 case_id는 정수. 가짜 DB는 숫자 문자열로 둔다.
+export const CASE_IDS = { main: '31', second: '32', closed: '29' } as const;
 
 /** 지도 중심(국립목포대학교 도림캠퍼스) */
 export { MAP_CENTER } from '@/mocks/scenario/map';
@@ -135,15 +137,22 @@ export function createScenario(r: number = Date.now()): DbState {
         },
       },
     ],
+    // 숫자는 팀 논의 전 임시값(docs/mock-scenario.md)
     settings: {
-      walk_speed_mps: { ADULT: 1.4, CHILD: 1.1, ELDERLY: 0.9 },
-      similarity_threshold_default: 0.6,
-      confirm_request_threshold: 0.75,
-      filter_margin_minutes: 3,
+      walking_speed_presets: [
+        { person_type: 'adult', speed_mps: 1.2, max_speed_mps: 1.8 },
+        { person_type: 'child', speed_mps: 1.0, max_speed_mps: 1.6 },
+        { person_type: 'elderly', speed_mps: 0.8, max_speed_mps: 1.2 },
+        { person_type: 'other', speed_mps: 1.0, max_speed_mps: 1.6 },
+      ],
+      default_similarity_threshold: 0.6,
+      alert_high_threshold: 0.8,
       out_of_filter_threshold: 0.85,
-      area_level_bounds: { high: 0.5, mid: 0.8 },
+      area_level_ratios: [0.5, 0.8, 1],
+      area_buffer_m: 30,
+      max_upload_bytes: 2_000_000_000,
+      version: 1,
       updated_at: t(-7 * DAY),
-      updated_by: USER_IDS.admin,
     },
     retention: { closed_case_days: 30, raw_video_days: 90 },
     audit_logs: createAuditLogs(r, USER_IDS, CASE_IDS),
@@ -174,6 +183,24 @@ export function createScenario(r: number = Date.now()): DbState {
     search_area_at: {},
     watches: {},
     alerts: [],
+    // 메인 사건: C3 확정 기준으로 이미 끝난 검색 하나(새로고침하면 latest_search로 복원)
+    searches: [
+      {
+        id: '3a1f6c2e-0000-4000-8000-000000000031',
+        case_id: CASE_IDS.main,
+        anchor: 'cand-c3',
+        anchor_decision_id: 'dec-4',
+        direction: 'forward',
+        task_id: 'scenario-done',
+        created_at: t(-29),
+        epoch: 0,
+        query_version: 1,
+        conditions_version: 1,
+        case_version: 1,
+        threshold: 0.6,
+      },
+    ],
+    public_ids: { next: 1001, map: {} },
     queries: {
       [CASE_IDS.main]: createQuery(
         t(-80),

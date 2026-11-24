@@ -58,7 +58,7 @@
 ## 프론트엔드 실행 (MSW 가짜 서버)
 
 > MSW로 임시 테스트용 프론트입니다. 백엔드 없이 브라우저 안의 가짜 서버(MSW)로 모든 화면이 동작합니다.
-> 실제 백엔드 연결은 아직 하지 않았습니다(차이 정리: `docs/openapi-diff.md`).
+> 실제 백엔드 연결은 아직 하지 않았습니다. API 기준: 백엔드 `openapi.json` + `docs/backend-api-final-requests.md`.
 
 **준비물**: Node.js 22.12 이상(또는 20.19 이상), 크롬, 카카오 JavaScript 키
 

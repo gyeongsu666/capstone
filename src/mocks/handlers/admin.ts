@@ -1,5 +1,6 @@
 // 관리자: 녹화 영상 · 시스템 설정 · 계정 · 이용 기록 · 데이터 보관
 import { http, HttpResponse } from 'msw';
+import type { ServerSystemSettings, ServerSystemSettingsPatch } from '@/api/server';
 import type {
   AuditLog,
   Page,
@@ -7,8 +8,6 @@ import type {
   ResetPasswordResponse,
   Retention,
   Role,
-  Settings,
-  SettingsUpdateRequest,
   User,
   UserCreateRequest,
   UserCreateResponse,
@@ -27,6 +26,7 @@ import {
   readJson,
   requireAdmin,
   requireUser,
+  requireVersion,
   validationError,
   withMock,
 } from '@/mocks/handlers/utils';
@@ -169,41 +169,63 @@ export const adminHandlers = [
 
   // ---------- 시스템 설정 ----------
 
-  // 시스템 설정 수정 · 관리자 · SYS01-006
-  http.put(
+  // 시스템 설정 수정 · 관리자 · SYS01-006 (보낸 값만 바꾼다)
+  http.patch(
     '/api/settings',
     withMock(async ({ request }) => {
       const user = requireAdminUser(request);
-      const b = await readJson<SettingsUpdateRequest>(request);
-      const nums: [string, unknown, number, number][] = [
-        ['walk_speed_mps.ADULT', b.walk_speed_mps?.ADULT, 0.1, 5],
-        ['walk_speed_mps.CHILD', b.walk_speed_mps?.CHILD, 0.1, 5],
-        ['walk_speed_mps.ELDERLY', b.walk_speed_mps?.ELDERLY, 0.1, 5],
-        ['similarity_threshold_default', b.similarity_threshold_default, 0, 1],
-        ['confirm_request_threshold', b.confirm_request_threshold, 0, 1],
-        ['filter_margin_minutes', b.filter_margin_minutes, 0, 120],
-        ['out_of_filter_threshold', b.out_of_filter_threshold, 0, 1],
-        ['area_level_bounds.high', b.area_level_bounds?.high, 0, 1],
-        ['area_level_bounds.mid', b.area_level_bounds?.mid, 0, 1],
-      ];
-      for (const [field, v, min, max] of nums) {
-        if (typeof v !== 'number' || v < min || v > max)
-          return validationError(field, `Input should be between ${min} and ${max}`);
-      }
-      if (b.area_level_bounds!.high >= b.area_level_bounds!.mid)
-        return validationError('area_level_bounds', '높음 기준은 중간 기준보다 작아야 해요');
+      const b = await readJson<ServerSystemSettingsPatch>(request);
       const s = db.state.settings;
-      const before = s.similarity_threshold_default;
-      Object.assign(s, b, { updated_at: nowKst(), updated_by: user.id });
+      requireVersion(s.version, b.expected_version);
+
+      const ratio = (field: string, v: unknown) => {
+        if (v !== undefined && (typeof v !== 'number' || v < 0 || v > 1))
+          throw new MockError(422, 'INVALID_SETTINGS', `${field}는 0~1이어야 해요.`, [
+            { field, code: 'range', message: '0~1' },
+          ]);
+      };
+      ratio('default_similarity_threshold', b.default_similarity_threshold);
+      ratio('alert_high_threshold', b.alert_high_threshold);
+      // R5: null이면 예외 기준 해제
+      if (b.out_of_filter_threshold !== null)
+        ratio('out_of_filter_threshold', b.out_of_filter_threshold);
+      const mid = b.default_similarity_threshold ?? s.default_similarity_threshold;
+      const high = b.alert_high_threshold ?? s.alert_high_threshold;
+      if (mid !== null && high !== null && mid >= high)
+        throw new MockError(
+          422,
+          'INVALID_SETTINGS',
+          '유사도 기준 기본값은 알림 높음 기준보다 작아야 해요.',
+        );
+      if (b.area_level_ratios !== undefined) {
+        const [r1, r2, r3] = b.area_level_ratios;
+        if (!(r1 > 0 && r1 < r2 && r2 < 1 && r3 === 1))
+          throw new MockError(422, 'INVALID_SETTINGS', '범위 비율은 높음 < 중간 < 1이어야 해요.');
+      }
+      if (b.walking_speed_presets !== undefined) {
+        for (const p of b.walking_speed_presets) {
+          if (!(p.speed_mps > 0 && p.speed_mps <= p.max_speed_mps))
+            throw new MockError(
+              422,
+              'INVALID_SETTINGS',
+              '평소 속도는 0보다 크고 최대 속도 이하여야 해요.',
+            );
+        }
+      }
+
+      const before = s.default_similarity_threshold;
+      const { expected_version: _v, ...patch } = b;
+      void _v;
+      Object.assign(s, patch, { version: s.version + 1, updated_at: nowKst() });
       addAudit(
         user.id,
         'SETTINGS_CHANGE',
-        before !== s.similarity_threshold_default
-          ? `유사도 기준 기본값 ${before.toFixed(2)} → ${s.similarity_threshold_default.toFixed(2)}`
+        before !== s.default_similarity_threshold
+          ? `유사도 기준 기본값 ${before?.toFixed(2) ?? '없음'} → ${s.default_similarity_threshold?.toFixed(2) ?? '없음'}`
           : '시스템 설정 변경',
       );
       db.save();
-      return HttpResponse.json<Settings>({ ...s, updated_by: toUserBrief(s.updated_by) });
+      return HttpResponse.json<ServerSystemSettings>(s);
     }),
   ),
 
@@ -243,7 +265,7 @@ export const adminHandlers = [
         throw new MockError(409, 'USERNAME_TAKEN', `${username}은 이미 쓰는 아이디예요.`);
       const temp = tempPassword();
       const user: DbUser = {
-        id: newId('u'),
+        id: String(Math.max(0, ...db.state.users.map((x) => Number(x.id) || 0)) + 1),
         username,
         password: temp,
         name: b.name.trim(),

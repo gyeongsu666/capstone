@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Alert, App, Input, Modal, Radio, Space } from 'antd';
+import { Alert, App, DatePicker, Input, Modal, Radio, Space } from 'antd';
+import dayjs, { type Dayjs } from 'dayjs';
 import { useCloseCase } from '@/api/cases';
 import { isApiError } from '@/api/client';
 import type { CaseView, CloseReasonView } from '@/api/view';
@@ -19,19 +20,26 @@ export function CloseCaseModal({
   const close = useCloseCase(caseData.id);
   const [reason, setReason] = useState<CloseReasonView>('found');
   const [note, setNote] = useState('');
+  const [foundAt, setFoundAt] = useState<Dayjs | null>(() => dayjs().second(0));
+  const ready = note.trim().length > 0 && (reason !== 'found' || !!foundAt);
 
   return (
     <Modal
-      title={`사건 ${caseData.caseNo} 종료`}
+      title={`사건 종료 · ${caseData.title}`}
       open={open}
       onCancel={onClose}
       okText="사건 종료"
-      okButtonProps={{ danger: true, loading: close.isPending }}
+      okButtonProps={{ danger: true, loading: close.isPending, disabled: !ready }}
       cancelText="취소"
       destroyOnHidden
       onOk={() =>
         close.mutate(
-          { reason, note: note.trim() },
+          {
+            reason,
+            note: note.trim(),
+            foundAt: foundAt?.format('YYYY-MM-DDTHH:mm:ssZ'),
+            version: caseData.version,
+          },
           {
             onSuccess: () => {
               message.success('사건을 종료했어요. 이제 읽기 전용이에요.');
@@ -58,9 +66,22 @@ export function CloseCaseModal({
             ))}
           </Radio.Group>
         </div>
+        {reason === 'found' && (
+          <div>
+            <div style={{ marginBottom: 8 }}>발견 시각</div>
+            <DatePicker
+              showTime={{ format: 'HH:mm' }}
+              format="YYYY-MM-DD HH:mm"
+              value={foundAt}
+              onChange={setFoundAt}
+              disabledDate={(d) => d.isAfter(dayjs(), 'day')}
+              style={{ width: '100%' }}
+            />
+          </div>
+        )}
         <Input.TextArea
           rows={3}
-          placeholder="메모 (선택)"
+          placeholder="종료 사유 (필수, 예: 도림제 산책로에서 발견)"
           value={note}
           onChange={(e) => setNote(e.target.value)}
           maxLength={500}
@@ -69,7 +90,13 @@ export function CloseCaseModal({
           <Alert
             type="error"
             showIcon
-            message={isApiError(close.error) ? close.error.detail : '사건을 종료하지 못했어요.'}
+            message={
+              isApiError(close.error, 'VERSION_CONFLICT')
+                ? '다른 사람이 사건을 먼저 바꿨어요. 최신 내용을 다시 불러왔으니 확인 후 다시 종료하세요.'
+                : isApiError(close.error)
+                  ? close.error.detail
+                  : '사건을 종료하지 못했어요.'
+            }
           />
         )}
       </Space>

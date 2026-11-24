@@ -31,7 +31,7 @@ export function CaseManageMenu({ caseId }: { caseId: string }) {
     );
   }
 
-  const canEditMembers = me?.role === 'ADMIN' || me?.id === c.createdBy.id;
+  const canEditMembers = me?.role === 'admin' || me?.id === c.createdBy.id;
   const items: MenuProps['items'] = [
     { key: 'video', icon: <VideoCameraAddOutlined />, label: '사건 영상 추가' },
     {

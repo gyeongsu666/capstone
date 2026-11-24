@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { bootstrapSession } from '@/api/auth';
 import { App } from '@/app/App';
 
 async function enableMocking() {
@@ -13,10 +14,13 @@ async function enableMocking() {
   });
 }
 
-enableMocking().then(() => {
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  );
-});
+// 가짜 서버를 켠 뒤, 세션 쿠키가 살아 있는지 /auth/me로 확인하고 화면을 그린다.
+enableMocking()
+  .then(bootstrapSession)
+  .then(() => {
+    createRoot(document.getElementById('root')!).render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+  });

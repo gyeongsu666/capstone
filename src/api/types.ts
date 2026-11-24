@@ -1,4 +1,4 @@
-// 임시 타입: docs/api-spec.md와 같은 이름·같은 snake_case 필드.
+// 옛 임시 타입(처음 프론트 명세 모양). 아직 openapi.json으로 옮기지 않은 영역과 가짜 DB만 쓴다.
 // 백엔드 /openapi.json이 나오면 openapi-typescript로 생성한 타입으로 바꾼다.
 
 /** ISO 8601 + 한국 시간. 예: "2026-10-19T15:02:00+09:00" */
@@ -100,7 +100,7 @@ export interface UserBrief {
 
 export interface MissingPerson {
   name: string;
-  age: number;
+  age: number | null;
   description: string;
 }
 

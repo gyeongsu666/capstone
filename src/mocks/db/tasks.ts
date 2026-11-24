@@ -1,4 +1,5 @@
 // 오래 걸리는 작업 흉내: 약 1초마다 progress 0 → 40 → 80 → 100 (docs/mock-scenario.md)
+import type { S } from '@/api/server';
 import type { Task, TaskStatus, TaskType } from '@/api/types';
 import { db, newId } from '@/mocks/db';
 import type { DbTask, DbTaskEffect } from '@/mocks/db/schema';
@@ -39,6 +40,57 @@ export function taskProgress(t: DbTask): { status: TaskStatus; progress: number 
     return { status: 'FAILURE', progress: t.fail_at };
   if (progress >= 100) return { status: 'SUCCESS', progress: 100 };
   return { status: progress === 0 ? 'PENDING' : 'PROGRESS', progress };
+}
+
+const SERVER_KIND = {
+  VIDEO_ANALYSIS: 'video_analysis',
+  WALK_ROUTE_CALC: 'walk_graph_recalculation',
+  QUERY_EMBEDDING: 'query_embedding',
+  CANDIDATE_SEARCH: 'candidate_search',
+  // 서버에는 현재 위치 계산 작업이 없다(조회할 때 계산). 옮기기 전까지 임시로 둔다.
+  SEARCH_AREA_CALC: 'candidate_search',
+} as const;
+
+/** 백엔드 Task 모양 */
+export function toServerTask(t: DbTask): S['Task'] {
+  const { status, progress } = taskProgress(t);
+  const st = (
+    { PENDING: 'queued', PROGRESS: 'running', SUCCESS: 'done', FAILURE: 'failed' } as const
+  )[status];
+  const stage =
+    st === 'queued'
+      ? 'queued'
+      : st === 'done'
+        ? 'done'
+        : st === 'failed'
+          ? 'failed'
+          : t.type === 'VIDEO_ANALYSIS'
+            ? progress < 50
+              ? 'converting'
+              : 'analyzing'
+            : 'analyzing';
+  const now = new Date().toISOString();
+  return {
+    task_id: t.task_id,
+    kind: SERVER_KIND[t.type],
+    case_id: null,
+    video_id: null,
+    status: st,
+    stage,
+    progress,
+    seq: 1,
+    processed_samples: 0,
+    total_samples: null,
+    skipped_samples: 0,
+    heartbeat_at: st === 'running' ? now : null,
+    created_at: new Date(t.started_at).toISOString(),
+    updated_at: now,
+    error:
+      st === 'failed'
+        ? { code: 'INTERNAL_ERROR', message: t.error ?? '작업이 실패했어요.', retryable: true }
+        : null,
+    result: st === 'done' ? (t.result as S['TaskResult'] | null) : null,
+  };
 }
 
 export function toTask(t: DbTask): Task {

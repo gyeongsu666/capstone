@@ -1,5 +1,16 @@
 import { useState } from 'react';
-import { App, Button, Card, InputNumber, Popover, Space, Table, Tag, type TableProps } from 'antd';
+import {
+  App,
+  Button,
+  Card,
+  InputNumber,
+  Popover,
+  Space,
+  Table,
+  Tag,
+  Typography,
+  type TableProps,
+} from 'antd';
 import { WarningOutlined } from '@ant-design/icons';
 import { useCorrectWalkEdge } from '@/api/admin';
 import { isApiError } from '@/api/client';
@@ -11,14 +22,16 @@ const fmtDist = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Ma
 function CorrectionEditor({ edge, onClose }: { edge: WalkEdgeView; onClose: () => void }) {
   const { message } = App.useApp();
   const correct = useCorrectWalkEdge();
-  const [dist, setDist] = useState<number | null>(edge.correctedDistanceM ?? edge.apiDistanceM);
-  const [min, setMin] = useState<number | null>(edge.correctedMinutes ?? edge.apiMinutes);
-  const save = (distanceM: number | null, minutes: number | null, text: string) =>
+  const [dist, setDist] = useState<number | null>(edge.distanceM);
+  const [min, setMin] = useState<number | null>(edge.minutes);
+  const save = () =>
+    dist &&
+    min &&
     correct.mutate(
-      { id: edge.id, distanceM, minutes },
+      { id: edge.id, version: edge.version, distanceM: dist, minutes: min },
       {
         onSuccess: () => {
-          message.success(text);
+          message.success('보정값을 저장했어요.');
           onClose();
         },
         onError: (e) => message.error(isApiError(e) ? e.detail : '저장하지 못했어요.'),
@@ -30,24 +43,19 @@ function CorrectionEditor({ edge, onClose }: { edge: WalkEdgeView; onClose: () =
         <InputNumber min={1} value={dist} onChange={setDist} suffix="m" style={{ width: 110 }} />
         <InputNumber min={1} value={min} onChange={setMin} suffix="분" style={{ width: 90 }} />
       </Space>
-      <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-        <Button
-          size="small"
-          disabled={edge.correctedMinutes === null}
-          onClick={() => save(null, null, '보정을 해제했어요.')}
-        >
-          보정 해제
-        </Button>
-        <Button
-          size="small"
-          type="primary"
-          loading={correct.isPending}
-          disabled={!dist || !min}
-          onClick={() => save(dist, min, '보정값을 저장했어요.')}
-        >
-          저장
-        </Button>
-      </Space>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        저장하면 직접 고친 값으로 표시되고, "다시 계산"을 해도 바뀌지 않아요.
+      </Typography.Text>
+      <Button
+        size="small"
+        type="primary"
+        block
+        loading={correct.isPending}
+        disabled={!dist || !min}
+        onClick={save}
+      >
+        저장
+      </Button>
     </Space>
   );
 }
@@ -63,7 +71,7 @@ interface WalkEdgePanelProps {
 export function WalkEdgePanel({ edges, codeById, selectedId, onSelect }: WalkEdgePanelProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const sorted = [...edges].sort(
-    (a, b) => Number(b.detourSuspected) - Number(a.detourSuspected) || a.id.localeCompare(b.id),
+    (a, b) => Number(b.detourSuspected) - Number(a.detourSuspected) || Number(a.id) - Number(b.id),
   );
   const detourCount = edges.filter((e) => e.detourSuspected).length;
 
@@ -81,17 +89,8 @@ export function WalkEdgePanel({ edges, codeById, selectedId, onSelect }: WalkEdg
       ),
     },
     {
-      title: 'API',
-      key: 'api',
-      render: (_, e) => (
-        <span className="num" style={{ whiteSpace: 'nowrap' }}>
-          {fmtDist(e.apiDistanceM)} · {e.apiMinutes}분
-        </span>
-      ),
-    },
-    {
-      title: '보정값',
-      key: 'corrected',
+      title: '거리 · 시간',
+      key: 'value',
       render: (_, e) => (
         <Popover
           trigger="click"
@@ -102,13 +101,23 @@ export function WalkEdgePanel({ edges, codeById, selectedId, onSelect }: WalkEdg
         >
           <Button size="small" onClick={(ev) => ev.stopPropagation()}>
             <span className="num">
-              {e.correctedMinutes !== null && e.correctedDistanceM !== null
-                ? `${fmtDist(e.correctedDistanceM)} · ${e.correctedMinutes}분`
-                : '—'}
+              {fmtDist(e.distanceM)} · {e.minutes}분
             </span>
           </Button>
         </Popover>
       ),
+    },
+    {
+      title: '값',
+      key: 'source',
+      render: (_, e) =>
+        e.source === 'manual' ? (
+          <Tag color="blue">직접 수정</Tag>
+        ) : e.detourSuspected || e.needsManual ? (
+          <Tag color="orange">보정 필요</Tag>
+        ) : (
+          <Tag>도보 API</Tag>
+        ),
     },
   ];
 

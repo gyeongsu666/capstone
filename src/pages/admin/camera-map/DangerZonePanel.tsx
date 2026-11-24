@@ -6,8 +6,8 @@ import {
   Input,
   List,
   Popconfirm,
-  Radio,
   Segmented,
+  Select,
   Slider,
   Space,
   Tag,
@@ -16,6 +16,7 @@ import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { useCreateDangerZone, useDeleteDangerZone, type DangerZoneInput } from '@/api/admin';
 import { isApiError } from '@/api/client';
 import type { DangerZoneView, LatLngView } from '@/api/view';
+import { dangerKindLabel, severityLabel } from '@/utils/format';
 import { emptyDraft, type ZoneDraft, type ZoneShape } from '@/pages/admin/camera-map/zoneDraft';
 
 interface DangerZonePanelProps {
@@ -37,13 +38,14 @@ export function DangerZonePanel({
   const create = useCreateDangerZone();
   const remove = useDeleteDangerZone();
   const [name, setName] = useState('');
-  const [target, setTarget] = useState<DangerZoneInput['targetType']>('missing');
+  const [kind, setKind] = useState<DangerZoneInput['kind']>('water');
+  const [severity, setSeverity] = useState<DangerZoneInput['severity']>('high');
 
   const ready = draftPolygon.length >= 3 && name.trim().length > 0;
 
   const save = () =>
     create.mutate(
-      { name: name.trim(), targetType: target, polygon: draftPolygon },
+      { name: name.trim(), kind, severity, polygon: draftPolygon },
       {
         onSuccess: () => {
           message.success(`위험 지역 "${name.trim()}"을 등록했어요.`);
@@ -115,10 +117,30 @@ export function DangerZonePanel({
             onChange={(e) => setName(e.target.value)}
             maxLength={30}
           />
-          <Radio.Group size="small" value={target} onChange={(e) => setTarget(e.target.value)}>
-            <Radio value="missing">실종자 (하천·공사장)</Radio>
-            <Radio value="criminal">범죄자 (인파 밀집)</Radio>
-          </Radio.Group>
+          <Space.Compact block>
+            <Select<DangerZoneInput['kind']>
+              size="small"
+              value={kind}
+              onChange={setKind}
+              style={{ width: '60%' }}
+              aria-label="종류"
+              options={Object.entries(dangerKindLabel).map(([value, label]) => ({
+                value: value as DangerZoneInput['kind'],
+                label,
+              }))}
+            />
+            <Select<DangerZoneInput['severity']>
+              size="small"
+              value={severity}
+              onChange={setSeverity}
+              style={{ width: '40%' }}
+              aria-label="위험도"
+              options={Object.entries(severityLabel).map(([value, label]) => ({
+                value: value as DangerZoneInput['severity'],
+                label: `위험도 ${label}`,
+              }))}
+            />
+          </Space.Compact>
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
             <Button size="small" onClick={() => onDraftChange(null)}>
               취소
@@ -167,7 +189,10 @@ export function DangerZonePanel({
             >
               <Space>
                 <span style={{ color: '#dc2626', fontWeight: 600 }}>{z.name}</span>
-                <Tag>{z.targetType === 'missing' ? '실종자' : '범죄자'}</Tag>
+                <Tag>{dangerKindLabel[z.kind]}</Tag>
+                <Tag color={z.severity === 'high' ? 'red' : undefined}>
+                  위험도 {severityLabel[z.severity]}
+                </Tag>
               </Space>
             </List.Item>
           )}

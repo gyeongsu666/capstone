@@ -14,7 +14,7 @@ export function ensureQuery(c: DbCase): DbQuery {
       images: [],
       time_from: c.missing_at,
       time_to: null,
-      threshold: db.state.settings.similarity_threshold_default,
+      threshold: db.state.settings.default_similarity_threshold ?? 0.6,
       searched: false,
       search_task_id: null,
     };

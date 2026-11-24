@@ -1,6 +1,11 @@
 import dayjs from 'dayjs';
 import type { DateTime, Role, WalkSpeedPreset } from '@/api/types';
-import type { CloseReasonView, WalkSpeedPresetView } from '@/api/view/types';
+import type {
+  CloseReasonView,
+  DangerKindView,
+  SeverityView,
+  WalkSpeedPresetView,
+} from '@/api/view/types';
 
 /** 24시간제 `15:02` */
 export const formatTime = (t: DateTime) => dayjs(t).format('HH:mm');
@@ -47,10 +52,15 @@ export const roleLabel: Record<Role, string> = {
   USER: '수색 담당자',
 };
 
+export const roleViewLabel: Record<'admin' | 'user', string> = {
+  admin: '관리자',
+  user: '수색 담당자',
+};
+
 /** 화면용 값 라벨 */
 export const closeReasonLabel: Record<CloseReasonView, string> = {
   found: '발견',
-  search_stopped: '수색 중단',
+  unresolved: '미해결(수색 중단)',
   other: '기타',
 };
 
@@ -58,4 +68,21 @@ export const walkSpeedViewLabel: Record<WalkSpeedPresetView, string> = {
   adult: '성인',
   child: '어린이',
   elderly: '노인',
+  other: '기타',
+};
+
+/** 위험 지역 종류(백엔드 kind) */
+export const dangerKindLabel: Record<DangerKindView, string> = {
+  water: '하천·저수지',
+  steep_slope: '급경사·산',
+  road: '큰 도로',
+  construction: '공사장',
+  other: '기타',
+};
+
+/** 위험도(백엔드 severity) */
+export const severityLabel: Record<SeverityView, string> = {
+  low: '낮음',
+  medium: '중간',
+  high: '높음',
 };

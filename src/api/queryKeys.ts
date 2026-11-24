@@ -12,10 +12,16 @@ export const queryKeys = {
   },
   tracking: {
     query: (caseId: string) => ['tracking', caseId, 'query'] as const,
-    queue: (caseId: string) => ['tracking', caseId, 'queue'] as const,
+    search: (caseId: string, searchId: string) => ['tracking', caseId, 'search', searchId] as const,
+    /** 후보는 검색(search_id)마다 따로 캐시한다 */
+    queue: (caseId: string, searchId?: string | null) =>
+      searchId
+        ? (['tracking', caseId, 'queue', searchId] as const)
+        : (['tracking', caseId, 'queue'] as const),
     route: (caseId: string) => ['tracking', caseId, 'route'] as const,
     decisions: (caseId: string) => ['tracking', caseId, 'decisions'] as const,
     scene: (sceneId: string) => ['tracking', 'scene', sceneId] as const,
+    tracklet: (trackletId: string) => ['tracking', 'tracklet', trackletId] as const,
   },
   search: {
     area: (caseId: string) => ['search', caseId, 'area'] as const,

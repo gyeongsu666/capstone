@@ -5,10 +5,10 @@ import { useAuthStore } from '@/stores/auth';
 /** 로그인 안 했거나 첫 로그인 비밀번호 변경 전이면 로그인 화면으로 */
 export function RequireAuth() {
   const location = useLocation();
-  const token = useAuthStore((s) => s.token);
+  const status = useAuthStore((s) => s.status);
   const user = useAuthStore((s) => s.user);
 
-  if (!token || !user || user.must_change_password) {
+  if (status !== 'authenticated' || !user || user.mustChangePassword) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
   return <Outlet />;
@@ -17,7 +17,7 @@ export function RequireAuth() {
 /** 관리자 화면. 서버도 역할을 검사하지만 화면에서도 먼저 막는다. */
 export function RequireAdmin() {
   const role = useAuthStore((s) => s.user?.role);
-  if (role !== 'ADMIN') return <Forbidden />;
+  if (role !== 'admin') return <Forbidden />;
   return <Outlet />;
 }
 

@@ -1,15 +1,14 @@
 import { useState } from 'react';
-import { App, Button, Popconfirm, Popover, Progress, Slider, Space, Spin, Tooltip } from 'antd';
+import { App, Button, Popover, Progress, Slider, Space, Spin, Tooltip } from 'antd';
 import {
   CameraOutlined,
   ClockCircleOutlined,
-  DeleteOutlined,
   PercentageOutlined,
-  PlusOutlined,
   ReloadOutlined,
+  SwapOutlined,
 } from '@ant-design/icons';
 import { isApiError } from '@/api/client';
-import { useDeleteQueryImage, useRunSearch, useUpdateThreshold } from '@/api/tracking';
+import { useRunSearch, useUpdateThreshold } from '@/api/tracking';
 import type { QueryView, TaskView } from '@/api/view';
 import { formatDateTime, formatSimilarity } from '@/utils/format';
 
@@ -35,6 +34,8 @@ interface QueryBarProps {
   /** 진행 중인 특징 추출 */
   embedTask?: TaskView;
   onUpload: () => void;
+  /** 다시 검색할 때 기준이 되는 마지막 확정 판단(없으면 최초 목격 기준) */
+  anchorDecisionId: string | null;
 }
 
 /** 질의 바: 기준 사진 · 시간 범위 · 유사도 기준을 칩으로 항상 표시. 조건을 바꾸면 그 자리에서 다시 검색 */
@@ -45,78 +46,67 @@ export function QueryBar({
   searchTask,
   embedTask,
   onUpload,
+  anchorDecisionId,
 }: QueryBarProps) {
   const { message } = App.useApp();
   const updateThreshold = useUpdateThreshold(caseId);
   const runSearch = useRunSearch(caseId);
-  const deleteImage = useDeleteQueryImage(caseId);
   const [draft, setDraft] = useState(query.threshold);
   const [thresholdOpen, setThresholdOpen] = useState(false);
   const searching = !!searchTask;
-  const hasReady = query.images.some((i) => i.ready);
+  const hasReady = query.status === 'ready';
+  const thresholdDefault = query.thresholdDefault;
 
   const errorText = (e: unknown, fallback: string) => (isApiError(e) ? e.detail : fallback);
 
+  // 기준 대상은 사진 한 장 또는 트랙렛 하나(요청서 3.2). 바꾸기만 있고 따로 지우지는 않는다
   const photos = (
-    <div style={{ width: 260 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {query.images.map((img) => (
-          <div key={img.id} style={{ position: 'relative', width: 72 }}>
-            <img
-              src={img.url}
-              alt="기준 사진"
+    <div style={{ width: 240 }}>
+      {query.imageUrl ? (
+        <div style={{ position: 'relative', width: 96 }}>
+          <img
+            src={query.imageUrl}
+            alt="기준 대상"
+            style={{
+              width: 96,
+              height: 120,
+              objectFit: 'cover',
+              borderRadius: 4,
+              display: 'block',
+            }}
+          />
+          {query.status === 'embedding' && (
+            <div
               style={{
-                width: 72,
-                height: 90,
-                objectFit: 'cover',
-                borderRadius: 4,
-                display: 'block',
+                position: 'absolute',
+                inset: 0,
+                display: 'grid',
+                placeItems: 'center',
+                background: 'rgba(255,255,255,0.7)',
               }}
-            />
-            {!img.ready && (
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  display: 'grid',
-                  placeItems: 'center',
-                  background: 'rgba(255,255,255,0.7)',
-                  fontSize: 12,
-                }}
-              >
-                <Spin size="small" />
-              </div>
-            )}
-            {!readOnly && (
-              <Popconfirm
-                title="이 기준 사진을 뺄까요?"
-                okText="빼기"
-                cancelText="취소"
-                onConfirm={() =>
-                  deleteImage.mutate(img.id, {
-                    onError: (e) => message.error(errorText(e, '사진을 빼지 못했어요.')),
-                  })
-                }
-              >
-                <Button
-                  size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                  aria-label="기준 사진 빼기"
-                  style={{ position: 'absolute', top: 2, right: 2 }}
-                />
-              </Popconfirm>
-            )}
-          </div>
-        ))}
+            >
+              <Spin size="small" />
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ fontSize: 13, color: 'rgba(0,0,0,0.55)' }}>아직 기준 대상이 없어요.</div>
+      )}
+      <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)', margin: '6px 0' }}>
+        {query.source === 'tracklet' ? '영상 속 인물을 기준으로 골랐어요.' : '올린 사진이에요.'}
+        {query.status === 'failed' && ' 특징을 뽑지 못했어요. 다른 사진을 올려 주세요.'}
       </div>
       {!readOnly && (
-        <Button icon={<PlusOutlined />} block style={{ marginTop: 8 }} onClick={onUpload}>
-          사진 추가
-        </Button>
+        <Tooltip
+          title={query.locked ? '확정한 장면이 있어 기준 대상을 바꿀 수 없어요.' : undefined}
+        >
+          <Button icon={<SwapOutlined />} block disabled={query.locked} onClick={onUpload}>
+            {query.imageUrl ? '사진 바꾸기' : '사진 올리기'}
+          </Button>
+        </Tooltip>
       )}
       <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)', marginTop: 6 }}>
-        사진을 추가하면 특징을 뽑은 뒤 자동으로 다시 검색해요.
+        사진을 올리면 특징을 뽑은 뒤 자동으로 검색해요.
       </div>
     </div>
   );
@@ -129,15 +119,19 @@ export function QueryBar({
         step={0.01}
         value={draft}
         onChange={setDraft}
-        marks={{ [query.thresholdDefault]: '기본' }}
+        marks={thresholdDefault === null ? undefined : { [thresholdDefault]: '기본' }}
         tooltip={{ formatter: (v) => formatSimilarity(v ?? 0) }}
       />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span className="num" style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
-          관리자 기본값 {formatSimilarity(query.thresholdDefault)}
+          관리자 기본값 {thresholdDefault === null ? '미정' : formatSimilarity(thresholdDefault)}
         </span>
         <Space>
-          <Button size="small" onClick={() => setDraft(query.thresholdDefault)}>
+          <Button
+            size="small"
+            disabled={thresholdDefault === null}
+            onClick={() => thresholdDefault !== null && setDraft(thresholdDefault)}
+          >
             기본값
           </Button>
           <Button
@@ -175,23 +169,21 @@ export function QueryBar({
         <span style={chipStyle} role="button" tabIndex={0}>
           <CameraOutlined />
           기준 사진
-          <span style={{ display: 'inline-flex', gap: 2 }}>
-            {query.images.slice(0, 3).map((img) => (
-              <img
-                key={img.id}
-                src={img.url}
-                alt=""
-                style={{
-                  width: 20,
-                  height: 24,
-                  objectFit: 'cover',
-                  borderRadius: 3,
-                  opacity: img.ready ? 1 : 0.4,
-                }}
-              />
-            ))}
-          </span>
-          <span className="num">{query.images.length}장</span>
+          {query.imageUrl ? (
+            <img
+              src={query.imageUrl}
+              alt=""
+              style={{
+                width: 20,
+                height: 24,
+                objectFit: 'cover',
+                borderRadius: 3,
+                opacity: query.status === 'ready' ? 1 : 0.4,
+              }}
+            />
+          ) : (
+            <span style={{ color: 'rgba(0,0,0,0.45)' }}>없음</span>
+          )}
           {embedTask && <Spin size="small" />}
         </span>
       </Popover>
@@ -221,9 +213,9 @@ export function QueryBar({
           <PercentageOutlined />
           유사도 기준
           <b className="num">{formatSimilarity(query.threshold)}</b>
-          {query.threshold !== query.thresholdDefault && (
+          {thresholdDefault !== null && query.threshold !== thresholdDefault && (
             <span className="num" style={{ fontSize: 12, color: 'rgba(0,0,0,0.5)' }}>
-              (기본 {formatSimilarity(query.thresholdDefault)})
+              (기본 {formatSimilarity(thresholdDefault)})
             </span>
           )}
         </span>
@@ -239,16 +231,19 @@ export function QueryBar({
       ) : (
         !readOnly && (
           <Tooltip
-            title={hasReady ? '지금 조건으로 다시 검색' : '특징 추출이 끝난 기준 사진이 필요해요'}
+            title={hasReady ? '지금 조건으로 다시 검색' : '특징 추출이 끝난 기준 대상이 필요해요'}
           >
             <Button
               icon={<ReloadOutlined />}
               disabled={!hasReady}
               loading={runSearch.isPending}
               onClick={() =>
-                runSearch.mutate(undefined, {
-                  onError: (e) => message.error(errorText(e, '검색을 시작하지 못했어요.')),
-                })
+                runSearch.mutate(
+                  { anchorDecisionId },
+                  {
+                    onError: (e) => message.error(errorText(e, '검색을 시작하지 못했어요.')),
+                  },
+                )
               }
             >
               다시 검색

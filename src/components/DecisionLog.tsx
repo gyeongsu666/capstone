@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { Button, Popconfirm, Table, type TableProps } from 'antd';
+import { useState, type ReactNode } from 'react';
+import { Button, Input, Popover, Space, Table, Tag, type TableProps } from 'antd';
 import { CheckOutlined, CloseOutlined, PauseOutlined, RollbackOutlined } from '@ant-design/icons';
 import type { DecisionView, VerdictView } from '@/api/view';
 import { statusColor } from '@/theme';
@@ -46,14 +46,74 @@ const verdictLabel: Record<VerdictView, { text: string; icon: ReactNode; color: 
 };
 
 const revertWarning: Record<VerdictView, string> = {
-  yes: "이 장면 뒤의 확정 장면은 '재확인 필요'로 바뀌고, 직전 확정 장면 기준으로 다시 검색해요.",
-  no: '이 후보가 대기열로 돌아가요.',
+  yes: "이 장면 뒤의 확정 장면은 '재확인 필요'로 바뀌어요. 번복한 뒤 다시 검색하세요.",
+  no: '다시 검색하면 이 후보가 대기열에 다시 나와요.',
   hold: '이 후보가 대기열로 돌아가요.',
 };
 
+/** 번복 사유 입력(결정 기록 탭에서는 사유가 필수, 요청서 R3) */
+function RevertForm({
+  decision,
+  onRevert,
+  loading,
+}: {
+  decision: DecisionView;
+  onRevert: (reason: string) => void;
+  loading: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  return (
+    <Popover
+      trigger="click"
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setReason('');
+      }}
+      title="이 판단을 번복할까요?"
+      content={
+        <Space direction="vertical" style={{ width: 280 }}>
+          <div style={{ fontSize: 13 }}>{revertWarning[decision.verdict]}</div>
+          <Input.TextArea
+            rows={2}
+            autoFocus
+            placeholder="번복 사유 (필수, 예: 옷 색이 달라요)"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            maxLength={500}
+          />
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button size="small" onClick={() => setOpen(false)}>
+              취소
+            </Button>
+            <Button
+              size="small"
+              type="primary"
+              disabled={!reason.trim()}
+              loading={loading}
+              onClick={() => {
+                onRevert(reason.trim());
+                setOpen(false);
+                setReason('');
+              }}
+            >
+              번복
+            </Button>
+          </Space>
+        </Space>
+      }
+    >
+      <Button size="small" loading={loading}>
+        번복
+      </Button>
+    </Popover>
+  );
+}
+
 interface DecisionLogProps {
   decisions: DecisionView[];
-  onRevert: (decisionId: string) => void;
+  onRevert: (decision: DecisionView, reason: string) => void;
   /** 번복 중인 판단 */
   revertingId?: string | null;
   readOnly?: boolean;
@@ -89,31 +149,50 @@ export function DecisionLog({
     {
       title: '장면',
       key: 'scene',
-      render: (_, r) => (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-          <img
-            src={r.decision.scene.thumbnailUrl}
-            alt=""
-            width={24}
-            height={30}
-            style={{ borderRadius: 3, objectFit: 'cover', opacity: r.decision.revert ? 0.5 : 1 }}
-          />
-          <span className="num">
-            {r.decision.scene.cameraCode} {formatTime(r.decision.scene.startAt)}
+      render: (_, r) => {
+        const sc = r.decision.scene;
+        // 장면 정보는 화면이 아는 경우만(서버 기록에는 없음). 모르면 찍힌 시각만 보여 준다
+        return (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            {sc && (
+              <img
+                src={sc.thumbnailUrl}
+                alt=""
+                width={24}
+                height={30}
+                style={{
+                  borderRadius: 3,
+                  objectFit: 'cover',
+                  opacity: r.decision.revert ? 0.5 : 1,
+                }}
+              />
+            )}
+            <span className="num">
+              {sc ? `${sc.cameraCode} ` : r.decision.source === 'alert' ? '출현 알림 ' : '장면 '}
+              {formatTime(sc?.startAt ?? r.decision.observedAt)}
+            </span>
+            {r.type === 'decision' && r.decision.needsRecheck && (
+              <Tag color="orange" style={{ margin: 0 }}>
+                재확인 필요
+              </Tag>
+            )}
           </span>
-        </span>
-      ),
+        );
+      },
     },
     {
       title: '판단',
       key: 'verdict',
-      width: 130,
+      width: 200,
       render: (_, r) => {
         if (r.type === 'revert') {
           return (
             <span style={{ display: 'inline-flex', gap: 4, color: statusColor.pending }}>
               <RollbackOutlined />
               번복
+              {r.decision.revert?.reason && (
+                <span style={{ color: 'rgba(0,0,0,0.55)' }}>· {r.decision.revert.reason}</span>
+              )}
             </span>
           );
         }
@@ -139,17 +218,11 @@ export function DecisionLog({
       align: 'right',
       render: (_, r) =>
         r.type === 'decision' && !r.decision.revert && !readOnly ? (
-          <Popconfirm
-            title="이 판단을 번복할까요?"
-            description={<div style={{ maxWidth: 260 }}>{revertWarning[r.decision.verdict]}</div>}
-            okText="번복"
-            cancelText="취소"
-            onConfirm={() => onRevert(r.decision.id)}
-          >
-            <Button size="small" loading={revertingId === r.decision.id}>
-              번복
-            </Button>
-          </Popconfirm>
+          <RevertForm
+            decision={r.decision}
+            loading={revertingId === r.decision.id}
+            onRevert={(reason) => onRevert(r.decision, reason)}
+          />
         ) : null,
     },
   ];
