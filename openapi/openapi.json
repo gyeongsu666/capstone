@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ReFind API",
-    "version": "1.0.0-draft",
-    "description": "최종 사용자 기능 목록을 우선 적용한 계약 초안. 첨부된 통신 1~6 MD 및 다이어그램과 대조. 서버·DB·워커 구현 및 실제 API 테스트는 수행하지 않았다. 각 JSON 응답의 responses.content.schema가 정식 응답 모델이며 x-response-model은 FastAPI 구현 참고용 확장이다."
+    "version": "1.1.0",
+    "description": "LEFT(구 ReFind) API 계약 1.1.0. 1.0.0-draft에 프론트 요청서 확정안 R1~R7(docs/api/frontend-api-requests.md)과 프론트 구현 기준 조회 권한(R8)을 반영하고 실시간 전달을 REST 폴링으로 확정했다. 각 JSON 응답의 responses.content.schema가 정식 응답 모델이며 x-response-model은 FastAPI 구현 참고용 확장이다."
   },
   "servers": [
     {
@@ -641,7 +641,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/User"
+                  "$ref": "#/components/schemas/LoginResponse"
                 }
               }
             }
@@ -867,8 +867,8 @@
           "admin"
         ],
         "x-access-policy": "session",
-        "x-response-model": "User",
-        "description": "최초 로그인 제한 세션도 허용."
+        "x-response-model": "LoginResponse",
+        "description": "R4. 유효한 세션 쿠키로 사용자와 CSRF 토큰을 복원한다. 조회 자체로 CSRF 토큰을 회전시키지 않는다(다른 탭 토큰 유지). 로그인·비밀번호 변경 등 세션 회전 절차에서만 새 토큰. 첫 로그인 비밀번호 변경 전에도 허용. expires_at은 서버가 판단한 현재 세션 만료 시각이며 최종 기준은 서버의 401."
       }
     },
     "/api/auth/password": {
@@ -2106,7 +2106,7 @@
         ],
         "x-access-policy": "session",
         "x-response-model": "MapData",
-        "description": "bbox는 네 값 모두 함께 지정. west<east,south<north. case_id를 지정하면 담당 권한 확인. 페이지의 카메라·경로·위험 지역을 ID로 병합."
+        "description": "bbox는 네 값 모두 함께 지정. west<east,south<north. case_id를 지정하면 담당 권한 확인. 페이지의 카메라·경로·위험 지역을 ID로 병합. 프론트 1차 구현은 /cameras·/danger-zones 개별 목록을 쓰므로 구현 우선순위 낮음."
       }
     },
     "/api/cases": {
@@ -4708,7 +4708,7 @@
         ],
         "x-access-policy": "사건 주 담당자 또는 admin. 주 담당자 제거 불가.",
         "x-response-model": "AssigneeListResponse",
-        "description": "이미 미등록인 공동 담당자 제거는 현재 목록으로 200. 권한 회수 시 활성 WebSocket 구독도 해제."
+        "description": "이미 미등록인 공동 담당자 제거는 현재 목록으로 200. 권한 회수 즉시 그 사용자의 해당 사건 조회·폴링은 404."
       }
     },
     "/api/cases/{case_id}/query/photo": {
@@ -8611,7 +8611,7 @@
         ],
         "x-access-policy": "admin 또는 사건 주 담당자·공동 담당자. 비담당 사건은 404. 조회 대상 ID와 사건 소속을 매 요청 검사.",
         "x-response-model": "DecisionReverseResponse",
-        "description": "이력 보존. 의존하는 확정 장면은 재확인 표시 후 동선에서 제외하고 검색 무효화·감시 재동기화. 알림 판정도 같은 경로로 번복 가능. 의존성은 단순 등록 순서가 아니라 검색 anchor/query/확정 비교 기준으로 기록.",
+        "description": "이력 보존. 의존하는 확정 장면은 재확인 표시 후 동선에서 제외하고 검색 무효화·감시 재동기화. 알림 판정도 같은 경로로 번복 가능. 의존성은 단순 등록 순서가 아니라 검색 anchor/query/확정 비교 기준으로 기록. 보류 번복은 검색을 무효화하지 않는다(R3, 2026-11-24).",
         "requestBody": {
           "required": true,
           "content": {
@@ -11187,6 +11187,275 @@
         }
       }
     },
+    "/api/alerts/pending-count": {
+      "get": {
+        "tags": [
+          "실시간 감시"
+        ],
+        "summary": "미처리 출현 알림 집계",
+        "operationId": "get_pending_alert_count",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "미제공이면 서버 발급. 응답 X-Request-ID와 ErrorResponse.request_id에 동일 값."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "성공",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingAlertCount"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "오류: MALFORMED_REQUEST",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MALFORMED_REQUEST"
+            ]
+          },
+          "401": {
+            "description": "오류: UNAUTHENTICATED, SESSION_EXPIRED",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "UNAUTHENTICATED",
+              "SESSION_EXPIRED"
+            ]
+          },
+          "403": {
+            "description": "오류: FORBIDDEN, PASSWORD_CHANGE_REQUIRED",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "FORBIDDEN",
+              "PASSWORD_CHANGE_REQUIRED"
+            ]
+          },
+          "404": {
+            "description": "오류: RESOURCE_NOT_FOUND",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "RESOURCE_NOT_FOUND"
+            ]
+          },
+          "422": {
+            "description": "오류: VALIDATION_ERROR",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "VALIDATION_ERROR"
+            ]
+          },
+          "429": {
+            "description": "오류: RATE_LIMITED",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "RATE_LIMITED"
+            ]
+          },
+          "500": {
+            "description": "오류: INTERNAL_ERROR",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "INTERNAL_ERROR"
+            ]
+          },
+          "503": {
+            "description": "오류: DEPENDENCY_UNAVAILABLE",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "DEPENDENCY_UNAVAILABLE"
+            ]
+          }
+        },
+        "x-required-roles": [
+          "user",
+          "admin"
+        ],
+        "x-access-policy": "로그인 필수. 일반 사용자는 주 담당·공동 담당 사건, admin은 진행 중 사건 전체. 다른 사건 조회 API와 같은 접근 정책.",
+        "x-response-model": "PendingAlertCount",
+        "description": "R2. 사이드바 배지용. 프론트는 2.5초마다 조회한다. 결과가 없으면 {count:0, by_case:[]}."
+      }
+    },
     "/api/cases/{case_id}/videos": {
       "post": {
         "tags": [
@@ -11891,6 +12160,274 @@
         "x-access-policy": "admin 또는 사건 주 담당자·공동 담당자. 비담당 사건은 404. 조회 대상 ID와 사건 소속을 매 요청 검사.",
         "x-response-model": "VideoPage",
         "description": "해당 사건에 직접 업로드한 scope=case 영상만. 전역 녹화 영상은 후보 검색으로 활용."
+      }
+    },
+    "/api/videos/stats": {
+      "get": {
+        "tags": [
+          "관리자·녹화 영상"
+        ],
+        "summary": "녹화 영상 전체 현황 집계",
+        "operationId": "get_recorded_video_stats",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "미제공이면 서버 발급. 응답 X-Request-ID와 ErrorResponse.request_id에 동일 값."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "성공",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoStats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "오류: MALFORMED_REQUEST",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "MALFORMED_REQUEST"
+            ]
+          },
+          "401": {
+            "description": "오류: UNAUTHENTICATED, SESSION_EXPIRED",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "UNAUTHENTICATED",
+              "SESSION_EXPIRED"
+            ]
+          },
+          "403": {
+            "description": "오류: FORBIDDEN, PASSWORD_CHANGE_REQUIRED",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "FORBIDDEN",
+              "PASSWORD_CHANGE_REQUIRED"
+            ]
+          },
+          "404": {
+            "description": "오류: RESOURCE_NOT_FOUND",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "RESOURCE_NOT_FOUND"
+            ]
+          },
+          "422": {
+            "description": "오류: VALIDATION_ERROR",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "VALIDATION_ERROR"
+            ]
+          },
+          "429": {
+            "description": "오류: RATE_LIMITED",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "RATE_LIMITED"
+            ]
+          },
+          "500": {
+            "description": "오류: INTERNAL_ERROR",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "INTERNAL_ERROR"
+            ]
+          },
+          "503": {
+            "description": "오류: DEPENDENCY_UNAVAILABLE",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-error-codes": [
+              "DEPENDENCY_UNAVAILABLE"
+            ]
+          }
+        },
+        "x-required-roles": [
+          "admin"
+        ],
+        "x-access-policy": "admin 전용.",
+        "x-response-model": "VideoStats",
+        "description": "R7. cursor 일부 페이지를 전체 통계로 오인하지 않도록 별도 집계. 화면은 '전체 녹화 영상 현황'으로 표시. 구현 시 /api/videos/{video_id}보다 먼저 라우팅한다."
       }
     },
     "/api/videos/{video_id}": {
@@ -13103,9 +13640,10 @@
           }
         },
         "x-required-roles": [
+          "user",
           "admin"
         ],
-        "x-access-policy": "admin 전용.",
+        "x-access-policy": "사용자 조회 허용(수색 화면 지도). case_id를 주면 그 사건 접근 권한을 검사하고 사건 영상 카메라를 포함. 등록·수정·삭제는 admin 전용. (R8)",
         "x-response-model": "CameraPage",
         "description": "case_id 미지정은 전역 노드만, 지정은 사건 전용 노드 포함. camera_id는 영상용, node_id는 경로/수정 주소용."
       },
@@ -15450,9 +15988,10 @@
           }
         },
         "x-required-roles": [
+          "user",
           "admin"
         ],
-        "x-access-policy": "admin 전용.",
+        "x-access-policy": "사용자 조회 허용(수색 화면 지도). 등록·수정·삭제는 admin 전용. (R8)",
         "x-response-model": "DangerZonePage"
       },
       "post": {
@@ -17848,9 +18387,10 @@
           }
         },
         "x-required-roles": [
+          "user",
           "admin"
         ],
-        "x-access-policy": "admin 전용.",
+        "x-access-policy": "사용자 조회 허용(사건 등록·질의 바의 기본값 표시). 수정(PATCH)은 admin 전용. (R8)",
         "x-response-model": "SystemSettings"
       },
       "patch": {
@@ -19199,7 +19739,7 @@
         ],
         "x-access-policy": "admin 전용.",
         "x-response-model": "User",
-        "description": "마지막 활성 관리자 강등 금지. 역할이 바뀌면 대상의 기존 세션과 WebSocket 즉시 폐기.",
+        "description": "마지막 활성 관리자 강등 금지. 역할이 바뀌면 대상의 기존 세션 즉시 폐기.",
         "requestBody": {
           "required": true,
           "content": {
@@ -23844,13 +24384,44 @@
             "description": "설정용 유사도 임계값. 점수 자체의 범위는 -1~1이며 운영 임계값은 0~1로 제한하는 제안.",
             "minimum": 0,
             "maximum": 1
+          },
+          "person_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "앞뒤 공백 제거 후 1~50자."
+          },
+          "person_age": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 150
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_seen_place_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "description": "공백만 입력하면 null로 저장."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "title",
           "person_type",
           "last_seen_at",
-          "last_seen_location"
+          "last_seen_location",
+          "person_name"
         ],
         "additionalProperties": false,
         "description": "last_seen_at은 서버 현재 시각 이후 금지. 유사도 생략 시 설정 기본값의 스냅샷 사용. 등록자는 주 담당자."
@@ -24178,6 +24749,50 @@
             "type": "string",
             "description": "시간대 필수 RFC3339. 저장 UTC, 응답 Z 또는 오프셋. 시간대 없는 값은 422.",
             "format": "date-time"
+          },
+          "person_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "앞뒤 공백 제거 후 1~50자."
+          },
+          "person_age": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 150
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_seen_place_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "description": "공백만 입력하면 null로 저장."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "$ref": "#/components/schemas/CaseSummary"
+          },
+          "latest_search": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchRun"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "R6. 이 사건에서 가장 최근에 생성된 검색(완료 여부 무관, 동시 생성 시 서버가 일관된 순서로 하나 선택). 없으면 null. stale은 조회 시점 기준으로 반영하며 실패·무효여도 과거 검색으로 대체하지 않는다."
           }
         },
         "required": [
@@ -24201,7 +24816,12 @@
           "watch_enabled",
           "version",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "person_name",
+          "person_age",
+          "last_seen_place_name",
+          "summary",
+          "latest_search"
         ],
         "additionalProperties": false
       },
@@ -24241,13 +24861,44 @@
           "expected_version": {
             "type": "integer",
             "minimum": 1
+          },
+          "person_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "앞뒤 공백 제거 후 1~50자."
+          },
+          "person_age": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 150
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_seen_place_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "description": "공백만 입력하면 null로 저장."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "expected_version"
         ],
         "additionalProperties": false,
-        "minProperties": 2
+        "minProperties": 2,
+        "description": "person_age·last_seen_place_name은 null로 초기화 가능(R1)."
       },
       "CaseCloseRequest": {
         "type": "object",
@@ -25616,7 +26267,7 @@
           "summary"
         ],
         "additionalProperties": false,
-        "description": "판단 근거는 점수·시공간 조건의 설명. 자동 동일인 확정이 아님."
+        "description": "R5 포함 규칙. 모든 후보는 사건 similarity_threshold 이상. time_feasible=true: 기본 기준 이상이면 포함. time_feasible=false: out_of_filter_threshold가 있고 similarity >= max(similarity_threshold, out_of_filter_threshold)일 때만 포함, TIME_REVIEW_REQUIRED. time_feasible=null(경로를 찾지 못해 판정 불가): 기본 기준 이상이면 포함, MANUAL_REVIEW_REQUIRED와 ROUTE_UNKNOWN. 시간 조건은 최대 보행 속도 기반 최소 이동 시간으로 판단한다(고정 여유 시간·확인 요청 기준 없음). 방향 불일치 등은 전용 코드 없이 순위와 summary에만 반영한다."
       },
       "Candidate": {
         "type": "object",
@@ -26002,7 +26653,8 @@
           "reason": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 2000
+            "maxLength": 500,
+            "description": "생략 가능, null 불가. 입력 시 앞뒤 공백 제거 후 1~500자. 판단 직후 8초 되돌리기는 생략, 결정 기록 탭은 프론트가 필수로 받는다."
           },
           "expected_version": {
             "type": "integer",
@@ -26010,10 +26662,10 @@
           }
         },
         "required": [
-          "reason",
           "expected_version"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "description": "R3. expected_version은 대상 Decision.version. 8초는 화면의 되돌리기 표시 시간이며 서버의 번복 가능 시간 제한이 아니다. 번복만으로 재검색 작업을 자동 실행하지 않는다."
       },
       "DecisionReverseResponse": {
         "type": "object",
@@ -26046,7 +26698,7 @@
           "case_version"
         ],
         "additionalProperties": false,
-        "description": "원 판정을 reversed 처리하고 그 판정을 기준으로 확정된 후속 의존 장면을 전이적으로 재확인 대상으로 표시. 동선·감시 기준에서 제외. 재확인은 해당 판정도 번복한 뒤 새 판정을 저장. 알림 원 판정 번복이면 alert를 pending으로 복원한다."
+        "description": "원 판정을 reversed 처리하고 그 판정을 기준으로 확정된 후속 의존 장면을 전이적으로 재확인 대상으로 표시. 동선·감시 기준에서 제외. 재확인은 해당 판정도 번복한 뒤 새 판정을 저장. 알림 원 판정 번복이면 alert를 pending으로 복원한다. R3 검색 무효화: confirmed·rejected 번복은 사건의 유효한 검색을 모두 무효화해 invalidated_search_ids로 반환한다. deferred(보류) 번복은 검색을 무효화하지 않고(invalidated_search_ids=[]) case_version만 올리며, 그 후보는 같은 검색에서 decision=null로 돌아와 바로 다시 판단할 수 있다."
       },
       "DecisionPage": {
         "type": "object",
@@ -27703,6 +28355,19 @@
             "type": "string",
             "description": "시간대 필수 RFC3339. 저장 UTC, 응답 Z 또는 오프셋. 시간대 없는 값은 422.",
             "format": "date-time"
+          },
+          "out_of_filter_threshold": {
+            "anyOf": [
+              {
+                "type": "number",
+                "description": "설정용 유사도 임계값. 점수 자체의 범위는 -1~1이며 운영 임계값은 0~1로 제한하는 제안.",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -27713,10 +28378,11 @@
           "area_buffer_m",
           "max_upload_bytes",
           "version",
-          "updated_at"
+          "updated_at",
+          "out_of_filter_threshold"
         ],
         "additionalProperties": false,
-        "description": "프리셋 유형 중복 금지. 범위 비율은 r1<r2<r3=1인 누적 영역. 기본값<high. 미설정 값은 null이며 해당 계산/감시 차단. 임의 운영 수치 확정 안 함."
+        "description": "프리셋 유형 중복 금지. 범위 비율은 r1<r2<r3=1인 누적 영역. 기본값<high. 미설정 값은 null이며 해당 계산/감시 차단. 임의 운영 수치 확정 안 함. out_of_filter_threshold(R5): 초기값 null=시간 조건 밖 후보 예외 허용 안 함. PATCH 생략=유지, null=해제. 후보 검색에만 적용하고 출현 알림 기준에는 적용하지 않는다."
       },
       "SystemSettingsPatch": {
         "type": "object",
@@ -27762,6 +28428,19 @@
           "expected_version": {
             "type": "integer",
             "minimum": 1
+          },
+          "out_of_filter_threshold": {
+            "anyOf": [
+              {
+                "type": "number",
+                "description": "설정용 유사도 임계값. 점수 자체의 범위는 -1~1이며 운영 임계값은 0~1로 제한하는 제안.",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -28385,6 +29064,158 @@
           "type"
         ],
         "additionalProperties": false
+      },
+      "CaseSummary": {
+        "type": "object",
+        "properties": {
+          "confirmed_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "verdict=confirmed, status=active, needs_reconfirmation=false인 판단 수. 트랙렛·출현 알림 출처 모두 포함."
+          },
+          "pending_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "description": "latest_search가 done이고 stale=false일 때, 그 검색 후보 중 유효한 active 판단이 없는 후보 수. confirmed/rejected/deferred는 모두 판단 완료."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "confirmed_count",
+          "pending_count"
+        ],
+        "additionalProperties": false,
+        "description": "R1. pending_count=null은 검색이 없거나 queued/running/failed/stale인 경우이며 후보 0개와 구분한다. 현재 사용자가 접근할 수 있는 사건 데이터만 집계."
+      },
+      "PendingAlertCaseCount": {
+        "type": "object",
+        "properties": {
+          "case_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "case_id",
+          "count"
+        ],
+        "additionalProperties": false
+      },
+      "PendingAlertCount": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "by_case의 count 합과 같다."
+          },
+          "by_case": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingAlertCaseCount"
+            }
+          }
+        },
+        "required": [
+          "count",
+          "by_case"
+        ],
+        "additionalProperties": false,
+        "description": "R2. 진행 중 사건의 status=pending 알림만 센다(종료 사건 제외). 일반 사용자는 주 담당·공동 담당 사건, admin은 진행 중 전체. by_case는 1개 이상인 사건만, 수 내림차순·동률이면 case_id 오름차순. 읽음 상태를 만들거나 바꾸지 않는다."
+      },
+      "VideoStatusCounts": {
+        "type": "object",
+        "properties": {
+          "queued": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "running": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "done": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "queued",
+          "running",
+          "done",
+          "failed"
+        ],
+        "additionalProperties": false,
+        "description": "분석 시작 전·대기=queued, 진행 중=running, 성공=done, 실패=failed로 대응한 집계 분류. VideoAnalysis 타입 자체는 바꾸지 않는다."
+      },
+      "VideoCameraStats": {
+        "type": "object",
+        "properties": {
+          "camera_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "by_status": {
+            "$ref": "#/components/schemas/VideoStatusCounts"
+          }
+        },
+        "required": [
+          "camera_id",
+          "total",
+          "by_status"
+        ],
+        "additionalProperties": false
+      },
+      "VideoStats": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "by_status": {
+            "$ref": "#/components/schemas/VideoStatusCounts"
+          },
+          "by_camera": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VideoCameraStats"
+            }
+          },
+          "as_of": {
+            "type": "string",
+            "description": "시간대 필수 RFC3339. 저장 UTC, 응답 Z 또는 오프셋. 시간대 없는 값은 422.",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "total",
+          "by_status",
+          "by_camera",
+          "as_of"
+        ],
+        "additionalProperties": false,
+        "description": "R7. GET /api/videos와 같은 전역 녹화 영상 모집단·접근 범위·lifecycle 기본 필터(사건 전용 영상 제외). 목록의 추가 필터는 적용하지 않는다. total=상태별 합=by_camera total 합. 영상 없는 카메라 생략, camera_id 오름차순. 한 응답은 같은 스냅샷."
       }
     }
   },
@@ -28455,7 +29286,7 @@
   ],
   "x-websocket": {
     "url": "/ws",
-    "status": "design_proposal",
+    "status": "excluded",
     "authentication": "동일 출처 refind_session 쿠키 + Origin 검사. 제한 세션 거부. 연결/구독마다 사건·영상 권한 확인; 로그아웃/권한 회수 때 구독 해제 또는 연결 종료. URL 쿼리에 세션 비밀 전달 금지.",
     "required_roles": [
       "user",
@@ -28499,9 +29330,10 @@
       "pong_timeout_s": 60,
       "http_resync_interval_s": 5
     },
-    "limits_status": "기존 MD의 제안값. 실제 측정으로 확정 필요."
+    "limits_status": "기존 MD의 제안값. 실제 측정으로 확정 필요.",
+    "excluded_note": "1.1.0에서 제외. 실시간 기능은 REST 폴링(작업 2.5초, 영상 2.5초, 감시 상태 5초, 알림 2.5초, 미처리 집계 2.5초, 사건 상태 5초). 아래 메시지 스키마는 기록용으로만 남긴다."
   },
-  "x-contract-status": "reviewable-design; not implemented or runtime-tested",
+  "x-contract-status": "agreed-for-implementation; backend not yet implemented or runtime-tested",
   "x-design-source-precedence": [
     "이번 메시지의 최종 기능 목록",
     "첨부 통신 1~6 MD 및 다이어그램",
@@ -28510,7 +29342,7 @@
   "x-response-model-policy": {
     "json": "모든 성공/오류 JSON 응답은 components.schemas를 참조. operation.x-response-model은 기본 성공 모델명. 다른 상태코드 모델은 각 responses.schema 참조. 실제 Python response_model 데코레이터/Pydantic 클래스 코드는 이 JSON이 실행하지 않는다.",
     "file": "파일 바이트 응답은 BinaryMedia 및 MIME 스키마. x-response-model=null, FileResponse/내부 nginx 전달. JSON 모델로 직렬화하지 않는다.",
-    "websocket": "OpenAPI HTTP response_model 대상이 아니며 x-websocket에 별도 메시지 스키마 제공."
+    "websocket": "1.1.0에서 WebSocket 제외(x-websocket.status=excluded)."
   },
   "x-review-findings": [
     {
@@ -29319,6 +30151,29 @@
       "get_retention_policy",
       "patch_retention_policy",
       "list_deletion_candidates"
+    ],
+    "출현 알림: 미처리 집계(R2)": [
+      "get_pending_alert_count"
+    ],
+    "녹화 영상: 전체 현황 집계(R7)": [
+      "get_recorded_video_stats"
     ]
-  }
+  },
+  "x-changelog": [
+    {
+      "version": "1.1.0",
+      "date": "2026-11-27",
+      "changes": [
+        "R1 Case·CaseCreateRequest·CasePatch에 person_name, person_age, last_seen_place_name 추가, Case.summary(CaseSummary) 추가",
+        "R2 GET /api/alerts/pending-count 추가(PendingAlertCount)",
+        "R3 DecisionReverseRequest.reason 선택(1~500자, null 불가), 보류 번복은 검색 무효화 없음",
+        "R4 GET /api/auth/me 응답을 LoginResponse로 변경",
+        "R5 SystemSettings·SystemSettingsPatch에 out_of_filter_threshold 추가, CandidateReason 포함 규칙 명시",
+        "R6 Case.latest_search 추가",
+        "R7 GET /api/videos/stats 추가(VideoStats)",
+        "R8 GET /settings, /cameras, /danger-zones 사용자 조회 허용(프론트 구현 기준)",
+        "WebSocket 제외, REST 폴링 확정(x-websocket.status=excluded)"
+      ]
+    }
+  ]
 }

@@ -114,11 +114,12 @@ public/mock/    가짜 썸네일, 영상
 한 단계씩 진행하고, 단계마다 화면을 띄워 확인한 뒤 다음으로 넘어간다.
 
 - 화면 1~9단계(세팅 → 관리자 화면)와 백엔드 openapi.json 기준 API 전환 1~8단계는 끝났다(가짜 서버 기준).
-- 다음: 백엔드가 R1~R7을 반영한 openapi.json을 주면 `openapi/openapi.json`을 바꾸고 `npm run gen:api` → `src/api/server.ts`의 덧붙임 제거 → 차이를 사용자에게 먼저 보여준다. 그 뒤 실제 서버 연결(`VITE_USE_MOCK=false`, `API_PROXY_TARGET`).
+- openapi 1.1.0(R1~R8 반영)으로 타입을 다시 만들고 `src/api/server.ts`의 덧붙임을 지웠다(2026-11-28).
+- 실제 서버 연결: 로컬 백엔드(`capstone-backend/backend/tools/dev_local.py`)에 붙여 주요 화면을 확인했다. 실행은 `npx vite --mode realapi`(`.env.realapi.local`: `VITE_USE_MOCK=false`, `API_PROXY_TARGET=http://127.0.0.1:8000`). GPU 서버 배포본 연결은 아직이다.
 
 ## 진행 보고
 
-완료를 보고할 때 **"가짜 서버 기준 완료"**와 **"실제 서버 연결 완료"**를 구분한다. 지금은 모두 가짜 서버 기준이다.
+완료를 보고할 때 **"가짜 서버 기준 완료"**와 **"실제 서버 연결 완료"**를 구분한다. 지금은 로컬 실제 서버 연결까지 확인했고, GPU 서버 배포본 연결은 남았다.
 
 ## 아직 정해지지 않은 것
 

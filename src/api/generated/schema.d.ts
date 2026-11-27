@@ -53,7 +53,7 @@ export interface paths {
         };
         /**
          * 내 정보·역할 조회
-         * @description 최초 로그인 제한 세션도 허용.
+         * @description R4. 유효한 세션 쿠키로 사용자와 CSRF 토큰을 복원한다. 조회 자체로 CSRF 토큰을 회전시키지 않는다(다른 탭 토큰 유지). 로그인·비밀번호 변경 등 세션 회전 절차에서만 새 토큰. 첫 로그인 비밀번호 변경 전에도 허용. expires_at은 서버가 판단한 현재 세션 만료 시각이며 최종 기준은 서버의 401.
          */
         get: operations["get_me"];
         put?: never;
@@ -133,7 +133,7 @@ export interface paths {
         };
         /**
          * 수색 화면 지도 조회
-         * @description bbox는 네 값 모두 함께 지정. west<east,south<north. case_id를 지정하면 담당 권한 확인. 페이지의 카메라·경로·위험 지역을 ID로 병합.
+         * @description bbox는 네 값 모두 함께 지정. west<east,south<north. case_id를 지정하면 담당 권한 확인. 페이지의 카메라·경로·위험 지역을 ID로 병합. 프론트 1차 구현은 /cameras·/danger-zones 개별 목록을 쓰므로 구현 우선순위 낮음.
          */
         get: operations["get_map"];
         put?: never;
@@ -233,7 +233,7 @@ export interface paths {
         post?: never;
         /**
          * 공동 담당자 제거
-         * @description 이미 미등록인 공동 담당자 제거는 현재 목록으로 200. 권한 회수 시 활성 WebSocket 구독도 해제.
+         * @description 이미 미등록인 공동 담당자 제거는 현재 목록으로 200. 권한 회수 즉시 그 사용자의 해당 사건 조회·폴링은 404.
          */
         delete: operations["remove_case_assignee"];
         options?: never;
@@ -395,7 +395,7 @@ export interface paths {
         put?: never;
         /**
          * 판정 번복·영향받은 장면 목록
-         * @description 이력 보존. 의존하는 확정 장면은 재확인 표시 후 동선에서 제외하고 검색 무효화·감시 재동기화. 알림 판정도 같은 경로로 번복 가능. 의존성은 단순 등록 순서가 아니라 검색 anchor/query/확정 비교 기준으로 기록.
+         * @description 이력 보존. 의존하는 확정 장면은 재확인 표시 후 동선에서 제외하고 검색 무효화·감시 재동기화. 알림 판정도 같은 경로로 번복 가능. 의존성은 단순 등록 순서가 아니라 검색 anchor/query/확정 비교 기준으로 기록. 보류 번복은 검색을 무효화하지 않는다(R3, 2026-11-24).
          */
         post: operations["reverse_decision"];
         delete?: never;
@@ -533,6 +533,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/alerts/pending-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 미처리 출현 알림 집계
+         * @description R2. 사이드바 배지용. 프론트는 2.5초마다 조회한다. 결과가 없으면 {count:0, by_case:[]}.
+         */
+        get: operations["get_pending_alert_count"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cases/{case_id}/videos": {
         parameters: {
             query?: never;
@@ -548,6 +568,26 @@ export interface paths {
         put?: never;
         /** 사건 영상 추가·위치·방향·녹화 시각 */
         post: operations["upload_case_video"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/videos/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 녹화 영상 전체 현황 집계
+         * @description R7. cursor 일부 페이지를 전체 통계로 오인하지 않도록 별도 집계. 화면은 '전체 녹화 영상 현황'으로 표시. 구현 시 /api/videos/{video_id}보다 먼저 라우팅한다.
+         */
+        get: operations["get_recorded_video_stats"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -835,7 +875,7 @@ export interface paths {
         head?: never;
         /**
          * 계정 역할 변경
-         * @description 마지막 활성 관리자 강등 금지. 역할이 바뀌면 대상의 기존 세션과 WebSocket 즉시 폐기.
+         * @description 마지막 활성 관리자 강등 금지. 역할이 바뀌면 대상의 기존 세션 즉시 폐기.
          */
         patch: operations["change_user_role"];
         trace?: never;
@@ -1213,6 +1253,10 @@ export interface components {
             last_seen_location: components["schemas"]["GeoPoint"];
             /** @description 설정용 유사도 임계값. 점수 자체의 범위는 -1~1이며 운영 임계값은 0~1로 제한하는 제안. */
             similarity_threshold?: number;
+            /** @description 앞뒤 공백 제거 후 1~50자. */
+            person_name: string;
+            person_age?: number | null;
+            last_seen_place_name?: string | null;
         };
         Assignee: {
             user: components["schemas"]["UserSummary"];
@@ -1290,7 +1334,15 @@ export interface components {
              * @description 시간대 필수 RFC3339. 저장 UTC, 응답 Z 또는 오프셋. 시간대 없는 값은 422.
              */
             updated_at: string;
+            /** @description 앞뒤 공백 제거 후 1~50자. */
+            person_name: string;
+            person_age: number | null;
+            last_seen_place_name: string | null;
+            summary: components["schemas"]["CaseSummary"];
+            /** @description R6. 이 사건에서 가장 최근에 생성된 검색(완료 여부 무관, 동시 생성 시 서버가 일관된 순서로 하나 선택). 없으면 null. stale은 조회 시점 기준으로 반영하며 실패·무효여도 과거 검색으로 대체하지 않는다. */
+            latest_search: components["schemas"]["SearchRun"] | null;
         };
+        /** @description person_age·last_seen_place_name은 null로 초기화 가능(R1). */
         CasePatch: {
             title?: string;
             /** @enum {string} */
@@ -1304,6 +1356,10 @@ export interface components {
             last_seen_at?: string;
             last_seen_location?: components["schemas"]["GeoPoint"];
             expected_version: number;
+            /** @description 앞뒤 공백 제거 후 1~50자. */
+            person_name?: string;
+            person_age?: number | null;
+            last_seen_place_name?: string | null;
         };
         /** @description found이면 found_at 필수. open→closed 한 단계로 통일. 감시 해제와 새 판정 차단을 함께 커밋. 보관 파일은 삭제하지 않는다. */
         CaseCloseRequest: {
@@ -1629,7 +1685,7 @@ export interface components {
             created_at: string;
             completed_at: string | null;
         };
-        /** @description 판단 근거는 점수·시공간 조건의 설명. 자동 동일인 확정이 아님. */
+        /** @description R5 포함 규칙. 모든 후보는 사건 similarity_threshold 이상. time_feasible=true: 기본 기준 이상이면 포함. time_feasible=false: out_of_filter_threshold가 있고 similarity >= max(similarity_threshold, out_of_filter_threshold)일 때만 포함, TIME_REVIEW_REQUIRED. time_feasible=null(경로를 찾지 못해 판정 불가): 기본 기준 이상이면 포함, MANUAL_REVIEW_REQUIRED와 ROUTE_UNKNOWN. 시간 조건은 최대 보행 속도 기반 최소 이동 시간으로 판단한다(고정 여유 시간·확인 요청 기준 없음). 방향 불일치 등은 전용 코드 없이 순위와 summary에만 반영한다. */
         CandidateReason: {
             /** @description L2 정규화 임베딩의 코사인 유사도. 동일인 확률이 아니다. */
             similarity: number;
@@ -1723,11 +1779,13 @@ export interface components {
             reason: string;
             needs_reconfirmation: boolean;
         };
+        /** @description R3. expected_version은 대상 Decision.version. 8초는 화면의 되돌리기 표시 시간이며 서버의 번복 가능 시간 제한이 아니다. 번복만으로 재검색 작업을 자동 실행하지 않는다. */
         DecisionReverseRequest: {
-            reason: string;
+            /** @description 생략 가능, null 불가. 입력 시 앞뒤 공백 제거 후 1~500자. 판단 직후 8초 되돌리기는 생략, 결정 기록 탭은 프론트가 필수로 받는다. */
+            reason?: string;
             expected_version: number;
         };
-        /** @description 원 판정을 reversed 처리하고 그 판정을 기준으로 확정된 후속 의존 장면을 전이적으로 재확인 대상으로 표시. 동선·감시 기준에서 제외. 재확인은 해당 판정도 번복한 뒤 새 판정을 저장. 알림 원 판정 번복이면 alert를 pending으로 복원한다. */
+        /** @description 원 판정을 reversed 처리하고 그 판정을 기준으로 확정된 후속 의존 장면을 전이적으로 재확인 대상으로 표시. 동선·감시 기준에서 제외. 재확인은 해당 판정도 번복한 뒤 새 판정을 저장. 알림 원 판정 번복이면 alert를 pending으로 복원한다. R3 검색 무효화: confirmed·rejected 번복은 사건의 유효한 검색을 모두 무효화해 invalidated_search_ids로 반환한다. deferred(보류) 번복은 검색을 무효화하지 않고(invalidated_search_ids=[]) case_version만 올리며, 그 후보는 같은 검색에서 decision=null로 돌아와 바로 다시 판단할 수 있다. */
         DecisionReverseResponse: {
             decision: components["schemas"]["Decision"];
             affected_scenes: components["schemas"]["AffectedScene"][];
@@ -2076,7 +2134,7 @@ export interface components {
             speed_mps: number;
             max_speed_mps: number;
         };
-        /** @description 프리셋 유형 중복 금지. 범위 비율은 r1<r2<r3=1인 누적 영역. 기본값<high. 미설정 값은 null이며 해당 계산/감시 차단. 임의 운영 수치 확정 안 함. */
+        /** @description 프리셋 유형 중복 금지. 범위 비율은 r1<r2<r3=1인 누적 영역. 기본값<high. 미설정 값은 null이며 해당 계산/감시 차단. 임의 운영 수치 확정 안 함. out_of_filter_threshold(R5): 초기값 null=시간 조건 밖 후보 예외 허용 안 함. PATCH 생략=유지, null=해제. 후보 검색에만 적용하고 출현 알림 기준에는 적용하지 않는다. */
         SystemSettings: {
             walking_speed_presets: components["schemas"]["WalkingSpeedPreset"][];
             default_similarity_threshold: number | null;
@@ -2090,6 +2148,7 @@ export interface components {
              * @description 시간대 필수 RFC3339. 저장 UTC, 응답 Z 또는 오프셋. 시간대 없는 값은 422.
              */
             updated_at: string;
+            out_of_filter_threshold: number | null;
         };
         /** @description 기본 유사도는 새 사건에만 적용. 속도·구역 비율은 다음 계산에 반영. high를 낮춰 충돌하는 기존 감시 사건이 생기면 409와 사건 ID 반환. 기존 사건 mid는 변경하지 않음. */
         SystemSettingsPatch: {
@@ -2102,6 +2161,7 @@ export interface components {
             area_buffer_m?: number;
             max_upload_bytes?: number;
             expected_version: number;
+            out_of_filter_threshold?: number | null;
         };
         /** @description 사용자 지도용 읽기 전용. 스트림 URL·접속 정보 없음. 사건 전용 카메라는 case_id로 해당 권한을 확인한 경우에만 포함. */
         MapData: {
@@ -2252,6 +2312,45 @@ export interface components {
         WsPingPong: {
             /** @enum {string} */
             type: "ping" | "pong";
+        };
+        /** @description R1. pending_count=null은 검색이 없거나 queued/running/failed/stale인 경우이며 후보 0개와 구분한다. 현재 사용자가 접근할 수 있는 사건 데이터만 집계. */
+        CaseSummary: {
+            /** @description verdict=confirmed, status=active, needs_reconfirmation=false인 판단 수. 트랙렛·출현 알림 출처 모두 포함. */
+            confirmed_count: number;
+            pending_count: number | null;
+        };
+        PendingAlertCaseCount: {
+            case_id: number;
+            count: number;
+        };
+        /** @description R2. 진행 중 사건의 status=pending 알림만 센다(종료 사건 제외). 일반 사용자는 주 담당·공동 담당 사건, admin은 진행 중 전체. by_case는 1개 이상인 사건만, 수 내림차순·동률이면 case_id 오름차순. 읽음 상태를 만들거나 바꾸지 않는다. */
+        PendingAlertCount: {
+            /** @description by_case의 count 합과 같다. */
+            count: number;
+            by_case: components["schemas"]["PendingAlertCaseCount"][];
+        };
+        /** @description 분석 시작 전·대기=queued, 진행 중=running, 성공=done, 실패=failed로 대응한 집계 분류. VideoAnalysis 타입 자체는 바꾸지 않는다. */
+        VideoStatusCounts: {
+            queued: number;
+            running: number;
+            done: number;
+            failed: number;
+        };
+        VideoCameraStats: {
+            camera_id: number;
+            total: number;
+            by_status: components["schemas"]["VideoStatusCounts"];
+        };
+        /** @description R7. GET /api/videos와 같은 전역 녹화 영상 모집단·접근 범위·lifecycle 기본 필터(사건 전용 영상 제외). 목록의 추가 필터는 적용하지 않는다. total=상태별 합=by_camera total 합. 영상 없는 카메라 생략, camera_id 오름차순. 한 응답은 같은 스냅샷. */
+        VideoStats: {
+            total: number;
+            by_status: components["schemas"]["VideoStatusCounts"];
+            by_camera: components["schemas"]["VideoCameraStats"][];
+            /**
+             * Format: date-time
+             * @description 시간대 필수 RFC3339. 저장 UTC, 응답 Z 또는 오프셋. 시간대 없는 값은 422.
+             */
+            as_of: string;
         };
     };
     responses: never;
@@ -2529,7 +2628,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["User"];
+                    "application/json": components["schemas"]["LoginResponse"];
                 };
             };
             /** @description 오류: MALFORMED_REQUEST */
@@ -6719,6 +6818,120 @@ export interface operations {
             };
         };
     };
+    get_pending_alert_count: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 미제공이면 서버 발급. 응답 X-Request-ID와 ErrorResponse.request_id에 동일 값. */
+                "X-Request-ID"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 성공 */
+            200: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingAlertCount"];
+                };
+            };
+            /** @description 오류: MALFORMED_REQUEST */
+            400: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 오류: UNAUTHENTICATED, SESSION_EXPIRED */
+            401: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 오류: FORBIDDEN, PASSWORD_CHANGE_REQUIRED */
+            403: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 오류: RESOURCE_NOT_FOUND */
+            404: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 오류: VALIDATION_ERROR */
+            422: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 오류: RATE_LIMITED */
+            429: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 오류: INTERNAL_ERROR */
+            500: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 오류: DEPENDENCY_UNAVAILABLE */
+            503: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     list_case_videos: {
         parameters: {
             query?: {
@@ -6984,6 +7197,120 @@ export interface operations {
                 };
             };
             /** @description 오류: DEPENDENCY_UNAVAILABLE, STORAGE_UNAVAILABLE, STORAGE_CAPACITY_EXCEEDED, QUEUE_PUBLISH_FAILED, QUEUE_PUBLISH_UNCERTAIN */
+            503: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_recorded_video_stats: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 미제공이면 서버 발급. 응답 X-Request-ID와 ErrorResponse.request_id에 동일 값. */
+                "X-Request-ID"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 성공 */
+            200: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VideoStats"];
+                };
+            };
+            /** @description 오류: MALFORMED_REQUEST */
+            400: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 오류: UNAUTHENTICATED, SESSION_EXPIRED */
+            401: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 오류: FORBIDDEN, PASSWORD_CHANGE_REQUIRED */
+            403: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 오류: RESOURCE_NOT_FOUND */
+            404: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 오류: VALIDATION_ERROR */
+            422: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 오류: RATE_LIMITED */
+            429: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 오류: INTERNAL_ERROR */
+            500: {
+                headers: {
+                    "X-Request-ID"?: string;
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 오류: DEPENDENCY_UNAVAILABLE */
             503: {
                 headers: {
                     "X-Request-ID"?: string;
