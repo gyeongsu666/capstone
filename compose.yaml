@@ -1,17 +1,36 @@
-name: capstone
+# LEFT 백엔드 전체 구성: db, redis, api, worker-cpu, worker-gpu
+# 처음 실행: scripts/left.sh init → scripts/left.sh up → scripts/left.sh migrate → scripts/left.sh create-admin <아이디> <이름>
+name: left
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+psycopg://capstone:${POSTGRES_PASSWORD:?scripts/left.sh init을 먼저 실행하세요}@db:5432/capstone
+  REDIS_URL: redis://redis:6379/0
+  MEDIA_ROOT: /data/media
+  MODEL_ROOT: /app/모델벤치
+  SESSION_SECRET: ${SESSION_SECRET:?scripts/left.sh init을 먼저 실행하세요}
+  ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-}
+  TZ: Asia/Seoul
+
+x-backend-volumes: &backend-volumes
+  - ${MEDIA_ROOT_HOST:-./data/media}:/data/media
+
 services:
   db:
     build: ./infra/db
     environment:
       POSTGRES_DB: capstone
       POSTGRES_USER: capstone
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run python scripts/init_db_env.py first}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?scripts/left.sh init을 먼저 실행하세요}
       TZ: Asia/Seoul
     ports:
+      # 서버 안에서만 접속(pgAdmin은 SSH 터널)
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./db:/docker-entrypoint-initdb.d:ro
+      # PostgreSQL 18 이미지는 /var/lib/postgresql 아래 버전별 폴더에 데이터를 둔다
+      - postgres_data:/var/lib/postgresql
+      - ./infra/db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U capstone -d capstone"]
       interval: 5s
@@ -19,5 +38,76 @@ services:
       retries: 20
     restart: unless-stopped
     shm_size: 256mb
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        EXTRA_REQUIREMENTS: ""
+    environment: *backend-env
+    volumes: *backend-volumes
+    ports:
+      # 기본은 서버 안에서만. Tailscale 등으로 열 때 API_BIND를 바꾼다
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    restart: unless-stopped
+
+  # 사진 질의 특징 추출(OpenVINO CPU), 후보 검색, 도보 경로, 영상 변환
+  worker-cpu:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        EXTRA_REQUIREMENTS: backend/requirements-cpu-worker.txt
+    environment: *backend-env
+    volumes:
+      - ${MEDIA_ROOT_HOST:-./data/media}:/data/media
+      - ./모델벤치:/app/모델벤치
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "-Q", "default", "-n", "cpu@%h", "--concurrency", "4", "--loglevel", "INFO"]
+    restart: unless-stopped
+
+  # 영상 사전 분석(YOLO26n + ByteTrack + Intel Re-ID)
+  worker-gpu:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.gpu
+    environment: *backend-env
+    volumes:
+      - ${MEDIA_ROOT_HOST:-./data/media}:/data/media
+      - ./모델벤치:/app/모델벤치
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "-Q", "analysis", "-n", "gpu@%h", "--concurrency", "1", "--loglevel", "INFO"]
+    gpus: all
+    shm_size: 2gb
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  redis_data:

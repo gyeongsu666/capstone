@@ -1,0 +1,26 @@
+# worker-gpu: 영상 사전 분석. 모델 서버에서 검증한 잠금 파일(torch CUDA 휠 포함)을 그대로 쓴다.
+# 호스트에는 NVIDIA 드라이버와 NVIDIA Container Toolkit이 있어야 한다(compose의 gpus: all).
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    YOLO_CONFIG_DIR=/tmp/ultralytics \
+    MPLCONFIGDIR=/tmp/matplotlib
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements-model.lock backend/requirements.txt /tmp/req/
+RUN pip install -r /tmp/req/requirements-model.lock \
+    && pip install -r /tmp/req/requirements.txt
+
+COPY backend /app/backend
+COPY scripts/model_db.py scripts/tracklet_pipeline.py /app/scripts/
+WORKDIR /app/backend
+
+RUN useradd --create-home --uid 1000 left && mkdir -p /data/media && chown -R left /data/media
+USER left

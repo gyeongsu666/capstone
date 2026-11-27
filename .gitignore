@@ -6,3 +6,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# LEFT 백엔드
+data/
+.pytest_cache/

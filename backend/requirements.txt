@@ -1,0 +1,15 @@
+# API·워커 공통 (Python 3.12)
+fastapi==0.164.0
+uvicorn[standard]==0.53.0
+pydantic==2.14.3
+pydantic-settings==2.16.2
+python-multipart==0.0.33
+sqlalchemy==2.1.8
+alembic==1.20.0
+geoalchemy2==0.20.0
+psycopg[binary]==3.3.9
+pgvector==0.5.1
+celery==5.6.3
+redis==8.1.0
+argon2-cffi==25.1.0
+httpx==0.28.1
