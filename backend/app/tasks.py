@@ -38,12 +38,7 @@ def embed_query(task_id: str, case_id: int, query_version: int) -> dict:
 @celery_app.task(name="left.walk.recalculate", acks_late=True)
 def recalculate_walk(task_id: str, node_ids: list[int] | None = None, edge_ids: list[int] | None = None,
                      include_manual: bool = False) -> dict:
-    """도보 경로 계산(5단계 알고리즘 A에서 구현)."""
-    from uuid import UUID
+    """알고리즘 A: 노드 쌍마다 도보 경로 계산."""
+    from app.walk_worker import run_walk_recalculation
 
-    from app.db import session_scope
-    from app.queue import mark_failed
-
-    with session_scope() as db:
-        mark_failed(db, UUID(task_id), "FEATURE_NOT_IMPLEMENTED", "도보 경로 계산은 5단계에서 구현해요.")
-    return {"failed": "FEATURE_NOT_IMPLEMENTED"}
+    return run_walk_recalculation(task_id, node_ids, edge_ids, include_manual)

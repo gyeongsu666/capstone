@@ -1,7 +1,7 @@
 """서버에서 한 번 실행해 .env를 만든다. 비밀값은 화면에 출력하지 않는다.
 
 이미 .env가 있으면 없는 키만 덧붙이고 기존 값은 그대로 둔다.
-카카오 REST 키는 직접 .env에 적는다(KAKAO_REST_API_KEY=...).
+도보 경로 API 키는 직접 .env에 적는다(TMAP_APP_KEY=...). 키가 없으면 WALK_ROUTE_PROVIDER=straight.
 """
 from pathlib import Path
 import os
@@ -19,7 +19,8 @@ DEFAULTS = {
     "ALLOWED_ORIGINS": lambda: "http://localhost:5173",
     "COOKIE_SECURE": lambda: "false",
     "MEDIA_ROOT_HOST": lambda: "./data/media",
-    "KAKAO_REST_API_KEY": lambda: "",
+    "WALK_ROUTE_PROVIDER": lambda: "tmap",
+    "TMAP_APP_KEY": lambda: "",
 }
 
 

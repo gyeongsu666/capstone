@@ -1,4 +1,4 @@
-# LEFT 백엔드 전체 구성: db, redis, api, worker-cpu, worker-gpu
+# LEFT 백엔드 전체 구성: db, redis, api, worker-cpu, worker-gpu, watch
 # 처음 실행: scripts/left.sh init → scripts/left.sh up → scripts/left.sh migrate → scripts/left.sh create-admin <아이디> <이름>
 name: left
 
@@ -10,7 +10,8 @@ x-backend-env: &backend-env
   SESSION_SECRET: ${SESSION_SECRET:?scripts/left.sh init을 먼저 실행하세요}
   ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
   COOKIE_SECURE: ${COOKIE_SECURE:-false}
-  KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-}
+  WALK_ROUTE_PROVIDER: ${WALK_ROUTE_PROVIDER:-tmap}
+  TMAP_APP_KEY: ${TMAP_APP_KEY:-}
   TZ: Asia/Seoul
 
 x-backend-volumes: &backend-volumes
@@ -105,6 +106,25 @@ services:
     command: ["celery", "-A", "app.worker.celery_app", "worker", "-Q", "analysis", "-n", "gpu@%h", "--concurrency", "1", "--loglevel", "INFO"]
     gpus: all
     shm_size: 2gb
+    restart: unless-stopped
+
+  # 실시간 감시(알고리즘 H): 스트림 카메라를 읽어 감시 중인 사건과 비교, 출현 알림 저장
+  watch:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.gpu
+    environment: *backend-env
+    volumes:
+      - ${MEDIA_ROOT_HOST:-./data/media}:/data/media
+      - ./모델벤치:/app/모델벤치
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "app.watch_worker"]
+    gpus: all
+    shm_size: 1gb
     restart: unless-stopped
 
 volumes:

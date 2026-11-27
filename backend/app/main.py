@@ -6,19 +6,23 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.db import engine
 from app.errors import install_error_handlers
+from app.routers import area as area_router
 from app.routers import auth as auth_router
 from app.routers import cases as cases_router
 from app.routers import map_admin as map_router
 from app.routers import query as query_router
+from app.routers import search as search_router
 from app.routers import settings as settings_router
 from app.routers import tasks as tasks_router
 from app.routers import users as users_router
 from app.routers import videos as videos_router
+from app.routers import watch as watch_router
 
 settings = get_settings()
 app = FastAPI(title="LEFT API", version="1.1.0", openapi_url="/api/openapi.json", docs_url="/api/docs", redoc_url=None)
 install_error_handlers(app)
-for module in (auth_router, tasks_router, users_router, map_router, settings_router, cases_router, query_router, videos_router):
+for module in (auth_router, tasks_router, users_router, map_router, settings_router, cases_router, query_router, videos_router,
+               search_router, area_router, watch_router):
     app.include_router(module.router)
 
 

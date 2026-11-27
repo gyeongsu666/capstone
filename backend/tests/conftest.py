@@ -155,6 +155,11 @@ def fake_redis(monkeypatch):
     import app.common
 
     monkeypatch.setattr(app.common, "_redis", lambda: fake)
+    import app.routers.watch
+    import app.tracking_common
+
+    monkeypatch.setattr(app.tracking_common, "notify_watch", lambda case_id: None)
+    monkeypatch.setattr(app.routers.watch, "read_heartbeats", lambda ids: {})
     return fake
 
 

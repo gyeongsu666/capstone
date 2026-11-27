@@ -25,7 +25,13 @@ class Settings(BaseSettings):
     allowed_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
 
     idempotency_ttl_hours: int = 24
-    kakao_rest_api_key: str = ""
+
+    # 도보 경로(app/walk_route.py). tmap: SK 보행자 경로 API, straight: 직선 × 우회 계수 추정
+    walk_route_provider: str = "tmap"
+    tmap_app_key: str = ""
+    straight_detour_factor: float = 1.3
+    straight_walk_speed_mps: float = 1.2
+    detour_suspect_ratio: float = 1.8  # 직선 대비 이 이상이면 우회 의심(검증 현황의 기준)
 
     # Re-ID 모델(모델 브랜치 IntelEncoder와 같아야 한다)
     reid_model_name: str = "person-reidentification-retail-0287"

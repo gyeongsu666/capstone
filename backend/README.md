@@ -11,6 +11,7 @@ FastAPI + PostgreSQL(PostGIS, pgvector) + Redis + Celery. API 계약은 docs 브
 | api | REST API(`/api/...`), 문서 `/api/docs` | `backend/Dockerfile` |
 | worker-cpu | default 대기열: 사진 질의(YOLO로 사람 찾기 + Intel Re-ID, CPU), 후보 검색, 도보 경로 | `backend/Dockerfile.gpu`(GPU 없이 실행) |
 | worker-gpu | analysis 대기열: 영상 사전 분석(YOLO26n + ByteTrack + Intel Re-ID) | `backend/Dockerfile.gpu`(requirements-model.lock) |
+| watch | 실시간 감시: 스트림 카메라 추적 → 감시 중인 사건과 비교 → 출현 알림 | `backend/Dockerfile.gpu` |
 
 - DB와 Redis는 서버 안(127.0.0.1)에서만 열린다. API도 기본은 127.0.0.1이고, 밖에 열 때 `.env`의 `API_BIND`를 바꾼다.
 - 영상·썸네일·스냅샷은 `MEDIA_ROOT_HOST`(기본 `./data/media`)에 두고, DB에는 이 폴더 기준 **상대 경로**만 저장한다.
@@ -67,7 +68,7 @@ scripts/left.sh check                # /api/health + CPU·GPU 워커 왕복
 | 로그인 제한 | `app/common.py` | 같은 IP·아이디 15분 10회 실패 → 429 `RATE_LIMITED` + `Retry-After` |
 | 응답 모양 | `app/schemas_gen.py` | `openapi/openapi.json`(docs 브랜치 복사본)에서 생성. `tools/gen_schemas.sh`로 다시 만든다 |
 
-## 구현한 API (55/70, 4단계까지)
+## 구현한 API (70/70)
 
 | 묶음 | API | 파일 |
 |---|---|---|
@@ -79,7 +80,24 @@ scripts/left.sh check                # /api/health + CPU·GPU 워커 왕복
 | 대상 지정 | 기준 사진 업로드(→ CPU 워커 특징 추출)·화면용 사진, 트랙렛 선택(벡터 복사) | `routers/query.py`, `query_worker.py` |
 | 영상 | 녹화 영상 업로드·목록·집계(R7)·상세·재처리, 사건 영상 업로드·목록, 트랙렛 목록·장면, 썸네일, 재생(Range) | `routers/videos.py`, `video_view.py` |
 
-남은 15개는 5단계(알고리즘)에서 만든다: 후보 검색·후보 목록, 판단·번복·결정 기록, 동선·장면, 현재 위치 범위, 감시·출현 알림.
+| 검색·판단·동선 | 후보 검색·검색 상태·후보 목록, 판단·결정 기록·번복, 확정 동선, 장면 상세 | `routers/search.py` |
+| 범위 | 현재 위치 3단계 범위·위험 겹침·우선 구역 | `routers/area.py` |
+| 감시 | 감시 상태·시작·중지, 출현 알림 목록·상세·스냅샷·응답 | `routers/watch.py` |
+
+## 알고리즘(5단계)
+
+| | 내용 | 파일 |
+|---|---|---|
+| A 도보 그래프 | 노드 쌍마다 경로 제공자로 거리·시간·경로선 계산(우회율 1.8 초과 = 우회 의심, 관리자 보정은 덮어쓰지 않음). 검색·범위는 유효 거리(거리 × 보정 계수)로 Dijkstra | `walkgraph.py`, `walk_route.py`, `walk_worker.py` |
+| B 시공간 필터 | 기준점(확정 장면 또는 최초 목격)에서 카메라까지 최단 유효 거리 ÷ 유형별 최대 보행 속도 = 최소 이동 시간. 가용 시간 ≥ 최소 이동 시간이면 시간상 가능 | `search_algo.py` |
+| C R5 포함 규칙 | 시간상 불가능한 후보는 `out_of_filter_threshold`가 있고 두 기준을 모두 넘을 때만(TIME_REVIEW_REQUIRED), 경로 정보 없음은 포함(MANUAL_REVIEW_REQUIRED) | `search_algo.py` |
+| D 경로 일관성 | 기준 장면 이탈 노드·후보 진입 노드가 최단 경로 위에 있는지. 어긋나면 순위만 낮춤 | `search_algo.py` |
+| E 확인 루프 | 판단은 사건 잠금 안에서 검색 낡음·중복·버전 검사. 판단마다 기준 판단(depends_on) 기록 → '예' 번복 시 후속 장면 재확인 필요, 예·아니오 번복은 검색 무효화, 보류 번복은 무효화 안 함 | `routers/search.py` |
+| F 동선 | 유효 확정 장면을 관찰 시각 순으로, 사이는 도보 최단 경로선(추정)·평소 속도 소요 시간 | `routers/search.py` |
+| G 현재 위치 범위 | 경과 시간 × 평소 속도를 단계 비율로 나눠 길을 따라 경로선을 잘라 버퍼·합집합(동심원 아님). 이탈 방향 밖·나타나지 않은 카메라 너머는 1.5배 벌점. 위험 지역 겹침·우선 구역 | `area_algo.py`, `routers/area.py` |
+| H 실시간 감시 | 카메라별 스레드가 초당 4장 추적, 트랙마다 Re-ID 벡터를 사건 기준과 비교, 높음/중간 알림(트랙당 한 번), 시간상 도달 가능 여부를 근거로 저장. 심박은 Redis | `watch_worker.py` |
+
+도보 경로 제공자(`WALK_ROUTE_PROVIDER`): 카카오는 공개 도보 길찾기 REST API가 없어서 `tmap`(SK open API 보행자 경로, `TMAP_APP_KEY`)을 기본으로 두었다. 키가 없으면 `straight`(직선 × 1.3 추정, `error_code=STRAIGHT_LINE_ESTIMATE`)로 시연하고 관리자가 구간을 보정한다. 팀 확정이 필요하다(openapi D07).
 
 ## 영상 분석 흐름(GPU 워커)
 
