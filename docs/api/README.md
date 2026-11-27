@@ -1,11 +1,40 @@
-# ReFind API 명세서 (OpenAPI 초안)
+# LEFT API 명세서 (OpenAPI)
 
-- 작성일: 2026-11-16
-- 명세 파일: [openapi.json](openapi.json) (OpenAPI 3.1.0, 버전 1.0.0-draft)
-- 상태: 계약 초안. 서버 구현과 실제 API 테스트는 아직 하지 않았습니다.
+- 작성일: 2026-11-16, 1.1.0 갱신: 2026-11-27
+- 명세 파일: [openapi.json](openapi.json) (OpenAPI 3.1.0, 버전 1.1.0)
+- 상태: 백엔드 구현 기준으로 확정한 계약입니다. 서버 구현과 실제 API 테스트는 아직 하지 않았습니다.
 - 이전 장별 MD 11개(초안 v0.1)는 이 파일로 대체했습니다.
 - 프론트 추가·변경 요청(R1~R7)과 프론트 정책: [frontend-api-requests.md](frontend-api-requests.md)
 - 기능 요구사항(SYS00~02): [../requirements.md](../requirements.md)
+
+## 1.1.0 변경 사항
+
+1.0.0-draft에 프론트 요청서 확정안(R1~R7)을 반영하고, 프론트 구현에 맞춰 조회 권한(R8)과 실시간 전달 방식을 정했습니다. 변경 내역은 `openapi.json`의 `x-changelog`에도 있습니다.
+
+| 번호 | 변경 | 위치 |
+|---|---|---|
+| R1 | 사건에 실종자 이름·나이, 마지막 목격 장소 이름, 확정·대기 수(`summary`) 추가 | `Case`, `CaseCreateRequest`, `CasePatch`, `CaseSummary` |
+| R2 | 미처리 출현 알림 집계 API 추가 | `GET /api/alerts/pending-count` |
+| R3 | 번복 사유를 선택 항목으로 변경(1~500자), 보류 번복은 검색을 무효화하지 않음 | `DecisionReverseRequest` |
+| R4 | `/auth/me`가 `LoginResponse`(사용자 + CSRF 토큰 + 만료 시각)를 반환 | `GET /api/auth/me` |
+| R5 | 시간 조건 밖 후보의 예외 기준 `out_of_filter_threshold` 추가, 후보 포함 규칙 명시 | `SystemSettings`, `CandidateReason` |
+| R6 | 사건에 가장 최근 검색(`latest_search`) 추가 | `Case` |
+| R7 | 녹화 영상 전체 현황 집계 API 추가 | `GET /api/videos/stats` |
+| R8 | 시스템 설정·카메라·위험 지역 목록을 사용자도 조회(수정은 관리자만) | `GET /api/settings`, `/api/cameras`, `/api/danger-zones` |
+| - | WebSocket 제외, REST 폴링으로 확정 | `x-websocket.status=excluded` |
+
+## 문서 간 차이 정리
+
+팀 문서끼리 다르게 적힌 부분은 아래처럼 정했습니다. 기준 순서는 프론트 구현 > 프론트 요청서 > 이 명세 > 기술 스택 문서입니다.
+
+| 항목 | 다르게 적힌 곳 | 결정 |
+|---|---|---|
+| 실시간 전달 | 1.0.0-draft와 데이터 흐름 문서는 WebSocket, 프론트·요청서·기술 스택 문서는 폴링 | REST 폴링 |
+| 로그인 | 기술 스택 문서는 1차 제외, 이 명세·프론트·기능 요구사항(SYS00)은 포함 | 세션 쿠키 + CSRF + 역할(관리자·사용자) |
+| 벡터 검색 | 기술 스택 문서는 FAISS, 모델 브랜치 DB는 pgvector | PostgreSQL pgvector |
+| 판단 종류 | 모델 브랜치 DB는 확정·부재, 이 명세·프론트는 예·아니오·보류 + 번복 | 예·아니오·보류 + 번복(DB 스키마를 맞춰 고침) |
+| 후보 시간 조건 | 기능 요구사항은 필터 여유 시간·확인 요청 기준, 요청서는 최대 보행 속도 기준 | 최대 보행 속도 기반 최소 이동 시간 + `out_of_filter_threshold`(R5) |
+| 이전 API 초안 | 기능 명세 아티팩트의 "API 명세" 탭(58개, Bearer 토큰, page/size) | 사용하지 않음. 이 명세로 대체 |
 
 ## 보는 방법
 
@@ -15,14 +44,15 @@
 
 | 키 | 내용 |
 |---|---|
-| `x-websocket` | 실시간 감시·분석 진행률 WebSocket 계약 |
+| `x-websocket` | 1.1.0에서 제외한 WebSocket 설계(기록용) |
+| `x-changelog` | 버전별 변경 내역 |
 | `x-internal-contracts` | 백엔드와 GPU 워커 사이 큐 메시지 계약 |
 | `x-error-code-catalog`, `x-task-error-codes` | 에러 코드 목록 |
 | `x-feature-coverage` | 기능 요구사항과 API 연결표 |
 | `x-pending-decisions` | 팀 확정이 필요한 항목 (D01~D07) |
 | `x-review-findings` | 기존 문서와 충돌한 부분과 처리 방식 |
 
-## 엔드포인트 전체 목록 (68개)
+## 엔드포인트 전체 목록 (70개)
 
 ### 공통
 
@@ -106,6 +136,7 @@
 | GET | `/api/cases/{case_id}/alerts` | 출현 알림 목록 | 200 |
 | GET | `/api/cases/{case_id}/alerts/{alert_id}` | 출현 알림 상세·현재 판정 | 200 |
 | POST | `/api/cases/{case_id}/alerts/{alert_id}/decision` | 출현 알림 예·아니오 응답 | 200 |
+| GET | `/api/alerts/pending-count` | 미처리 출현 알림 집계(R2) | 200 |
 
 ### 사건 영상
 
@@ -126,7 +157,7 @@
 
 | 메서드 | 경로 | 용도 | 성공 |
 |---|---|---|---|
-| GET | `/api/cameras` | 카메라·보조지점 목록 | 200 |
+| GET | `/api/cameras` | 카메라·보조지점 목록(사용자도 조회, R8) | 200 |
 | POST | `/api/cameras` | 카메라·보조지점 등록 | 201 |
 | PATCH | `/api/cameras/{node_id}` | 카메라·보조지점 수정 | 200 |
 | DELETE | `/api/cameras/{node_id}` | 카메라·보조지점 삭제 | 200 |
@@ -143,7 +174,7 @@
 
 | 메서드 | 경로 | 용도 | 성공 |
 |---|---|---|---|
-| GET | `/api/danger-zones` | 위험 지역 목록 | 200 |
+| GET | `/api/danger-zones` | 위험 지역 목록(사용자도 조회, R8) | 200 |
 | POST | `/api/danger-zones` | 위험 지역 등록 | 201 |
 | PATCH | `/api/danger-zones/{zone_id}` | 위험 지역 수정 | 200 |
 | DELETE | `/api/danger-zones/{zone_id}` | 위험 지역 삭제 | 200 |
@@ -153,6 +184,7 @@
 | 메서드 | 경로 | 용도 | 성공 |
 |---|---|---|---|
 | GET | `/api/videos` | 녹화 영상 목록·분석 상태·진행률 | 200 |
+| GET | `/api/videos/stats` | 녹화 영상 전체 현황 집계(R7) | 200 |
 | POST | `/api/videos` | 녹화 영상 업로드·분석 접수 | 202 |
 | POST | `/api/videos/{video_id}/analysis` | 실패한 영상 분석 재처리 | 202, 200 |
 
@@ -160,7 +192,7 @@
 
 | 메서드 | 경로 | 용도 | 성공 |
 |---|---|---|---|
-| GET | `/api/settings` | 시스템 설정 조회 | 200 |
+| GET | `/api/settings` | 시스템 설정 조회(사용자도 조회, R8) | 200 |
 | PATCH | `/api/settings` | 시스템 설정 수정 | 200 |
 
 ### 관리자·계정
