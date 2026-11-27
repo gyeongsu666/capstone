@@ -6,10 +6,14 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.db import engine
 from app.errors import install_error_handlers
+from app.routers import auth as auth_router
+from app.routers import tasks as tasks_router
 
 settings = get_settings()
 app = FastAPI(title="LEFT API", version="1.1.0", openapi_url="/api/openapi.json", docs_url="/api/docs", redoc_url=None)
 install_error_handlers(app)
+app.include_router(auth_router.router)
+app.include_router(tasks_router.router)
 
 
 def check_db() -> dict:

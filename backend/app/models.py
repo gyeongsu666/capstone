@@ -54,8 +54,8 @@ def version_col() -> Any:
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    username: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
-    display_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    username: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(10), nullable=False, server_default="user")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
@@ -566,7 +566,7 @@ class AuditLog(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     occurred_at: Mapped[datetime] = ts(default=True)
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    actor_name: Mapped[str | None] = mapped_column(String(50))
+    actor_name: Mapped[str | None] = mapped_column(String(100))
     case_id: Mapped[int | None] = mapped_column(Integer)
     action: Mapped[str] = mapped_column(String(50), nullable=False)
     resource_type: Mapped[str] = mapped_column(String(30), nullable=False)

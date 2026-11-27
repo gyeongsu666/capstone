@@ -52,11 +52,32 @@ scripts/left.sh check                # /api/health + CPU·GPU 워커 왕복
 - hazard_zones: kind 값을 API와 맞추고 severity·description 추가
 - 모든 수정 대상에 `version`(낙관적 잠금)
 
+## 공통 규칙(3단계)
+
+| 규칙 | 위치 | 내용 |
+|---|---|---|
+| 인증 | `app/auth.py` | 쿠키 `refind_session`(HttpOnly, SameSite=Lax, 서버에 해시만 저장). 60분 안 쓰면 401 `SESSION_EXPIRED`, 최대 12시간 |
+| CSRF·Origin | `app/auth.py` | GET 외 요청은 `X-CSRF-Token` + 허용 Origin(`ALLOWED_ORIGINS`), 틀리면 403 `CSRF_INVALID` |
+| 첫 로그인 | `app/auth.py` | `must_change_password`면 `/auth/me·password·logout`만, 나머지 403 `PASSWORD_CHANGE_REQUIRED` |
+| 권한 | `app/auth.py` | `require_user`, `require_admin`, `load_case`(맡지 않은 사건은 404), `ensure_case_open`(409 `CASE_CLOSED`) |
+| 버전 | `app/common.py` | `check_version` → 409 `VERSION_CONFLICT` + `context.current_version` |
+| 목록 | `app/common.py` | `keyset_page`: 정렬 키 + ID keyset, 서명된 불투명 cursor(필터가 바뀌면 거절), limit 기본 30·최대 100 |
+| 멱등 키 | `app/common.py` | `Idempotency.begin/complete`: 같은 사용자·작업·키·본문이면 저장한 응답 재전송, 본문이 다르면 409 `IDEMPOTENCY_KEY_REUSED`, 24시간 보관 |
+| 이용 기록 | `app/common.py` | `record_audit`(같은 트랜잭션), `record_audit_detached`(로그인 실패 등 롤백돼도 남길 것) |
+| 로그인 제한 | `app/common.py` | 같은 IP·아이디 15분 10회 실패 → 429 `RATE_LIMITED` + `Retry-After` |
+| 응답 모양 | `app/schemas_gen.py` | `openapi/openapi.json`(docs 브랜치 복사본)에서 생성. `tools/gen_schemas.sh`로 다시 만든다 |
+
+구현한 API: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`, `POST /api/auth/password`, `GET /api/tasks/{task_id}`.
+
 ## 개발(로컬)
 
 ```bash
-py -3.13 -m venv .venv && .venv/Scripts/python -m pip install -r backend/requirements.txt pytest==9.1.1
-cd backend && ../.venv/Scripts/python -m pytest
+# DB 없는 테스트(아무 Python 3.12+)
+py -3.13 -m venv .venv && .venv/Scripts/python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+# 실제 PostgreSQL 테스트: pgserver(내장 PostgreSQL + pgvector)가 3.11 휠만 있어 3.11 가상환경을 쓴다
+py -3.11 -m venv .venv311 && .venv311/Scripts/python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+cd backend && ../.venv311/Scripts/python -m pytest
 ```
 
-로컬 테스트는 DB 없이 도는 것만 확인한다. 실제 스키마 적용은 서버에서 `migrate`로 확인한다.
+- pgserver에는 PostGIS가 없어서 테스트 DB는 geography 칸을 bytea로 바꿔 만든다(`tests/conftest.py`). 좌표 계산 테스트는 서버 DB로 돌린다: `TEST_DATABASE_URL=postgresql+psycopg://... pytest`
+- pgserver가 없으면 DB 테스트(`@pytest.mark.db`)는 건너뛴다.

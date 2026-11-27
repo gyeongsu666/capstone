@@ -1,0 +1,6 @@
+# 개발·테스트용(서버 이미지에는 넣지 않는다)
+pytest==9.1.1
+# 내장 PostgreSQL(+pgvector). 휠이 Python 3.11까지만 있어 로컬 DB 테스트는 3.11 가상환경에서 돌린다
+pgserver==0.1.4; python_version < "3.12"
+# openapi.json → app/schemas_gen.py 생성
+datamodel-code-generator==0.102.0

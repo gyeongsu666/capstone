@@ -80,23 +80,20 @@ def test_allowed_origins_comma_separated(monkeypatch):
 
 
 @pytest.fixture
-def client(monkeypatch):
-    # 닿지 않는 주소로 두어 연결 실패 경로를 확인한다
-    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://x:y@127.0.0.1:1/none")
-    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:1/0")
-    import app.config
+def down_client(monkeypatch):
+    """DB·Redis가 닿지 않는 상태를 흉내 낸다(다른 테스트의 엔진은 건드리지 않는다)."""
+    from sqlalchemy import create_engine
 
-    app.config.get_settings.cache_clear()
-    for mod in ("app.db", "app.main"):
-        if mod in importlib.sys.modules:
-            importlib.reload(importlib.sys.modules[mod])
-    from app.main import app as fastapi_app
+    import app.main
 
-    return TestClient(fastapi_app)
+    monkeypatch.setattr(app.main, "engine", create_engine("postgresql+psycopg://x:y@127.0.0.1:1/none",
+                                                          connect_args={"connect_timeout": 1}))
+    monkeypatch.setattr(app.main.settings, "redis_url", "redis://127.0.0.1:1/0")
+    return TestClient(app.main.app)
 
 
-def test_health_reports_degraded_when_dependencies_down(client):
-    res = client.get("/api/health")
+def test_health_reports_degraded_when_dependencies_down(down_client):
+    res = down_client.get("/api/health")
     assert res.status_code == 503
     body = res.json()
     assert body["status"] == "degraded"
@@ -105,8 +102,8 @@ def test_health_reports_degraded_when_dependencies_down(client):
     assert res.headers["X-Request-ID"]
 
 
-def test_error_format_for_unknown_route_and_request_id_echo(client):
-    res = client.get("/api/nope", headers={"X-Request-ID": "abc-123"})
+def test_error_format_for_unknown_route_and_request_id_echo(down_client):
+    res = down_client.get("/api/nope", headers={"X-Request-ID": "abc-123"})
     assert res.status_code == 404
     body = res.json()
     assert body["request_id"] == "abc-123"

@@ -10,3 +10,4 @@ __pycache__/
 # LEFT 백엔드
 data/
 .pytest_cache/
+.venv*/

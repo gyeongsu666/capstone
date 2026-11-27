@@ -17,7 +17,6 @@ HEADER = """-- LEFT 초기 스키마(openapi 1.1.0 기준, 20개 테이블). too
 -- 이후 변경은 이 파일을 고치지 말고 새 Alembic 리비전으로 추가한다.
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
 """
 
 FOOTER = """

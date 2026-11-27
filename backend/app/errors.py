@@ -22,6 +22,8 @@ class ApiError(Exception):
         fields: list[dict[str, str]] | None = None,
         context: dict[str, Any] | None = None,
         retryable: bool = False,
+        headers: dict[str, str] | None = None,
+        clear_session_cookie: bool = False,
     ):
         super().__init__(message)
         self.status = status
@@ -30,6 +32,9 @@ class ApiError(Exception):
         self.fields = fields or []
         self.context = context or {}
         self.retryable = retryable
+        self.headers = headers or {}
+        # 세션이 끝난 401에서 브라우저 쿠키도 지운다
+        self.clear_session_cookie = clear_session_cookie
 
 
 def request_id_of(request: Request) -> str:
@@ -38,7 +43,7 @@ def request_id_of(request: Request) -> str:
 
 def error_response(request: Request, err: ApiError) -> JSONResponse:
     rid = request_id_of(request)
-    return JSONResponse(
+    response = JSONResponse(
         status_code=err.status,
         content={
             "request_id": rid,
@@ -50,8 +55,13 @@ def error_response(request: Request, err: ApiError) -> JSONResponse:
                 "retryable": err.retryable,
             },
         },
-        headers={REQUEST_ID_HEADER: rid, "Cache-Control": "no-store"},
+        headers={REQUEST_ID_HEADER: rid, "Cache-Control": "no-store", **err.headers},
     )
+    if err.clear_session_cookie:
+        from app.auth import clear_session_cookie
+
+        clear_session_cookie(response)
+    return response
 
 
 _HTTP_CODES = {

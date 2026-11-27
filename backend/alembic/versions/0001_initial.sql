@@ -2,7 +2,6 @@
 -- 이후 변경은 이 파일을 고치지 말고 새 Alembic 리비전으로 추가한다.
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 
 CREATE TABLE hazard_zones (
@@ -43,8 +42,8 @@ CREATE INDEX nodes_location_idx ON nodes USING gist (location);
 
 CREATE TABLE users (
   id SERIAL NOT NULL, 
-  username VARCHAR(50) NOT NULL, 
-  display_name VARCHAR(50) NOT NULL, 
+  username VARCHAR(100) NOT NULL, 
+  display_name VARCHAR(100) NOT NULL, 
   password_hash VARCHAR(255) NOT NULL, 
   role VARCHAR(10) DEFAULT 'user' NOT NULL, 
   active BOOLEAN DEFAULT true NOT NULL, 
@@ -64,7 +63,7 @@ CREATE TABLE audit_logs (
   id BIGSERIAL NOT NULL, 
   occurred_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
   actor_user_id INTEGER, 
-  actor_name VARCHAR(50), 
+  actor_name VARCHAR(100), 
   case_id INTEGER, 
   action VARCHAR(50) NOT NULL, 
   resource_type VARCHAR(30) NOT NULL, 

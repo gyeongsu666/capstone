@@ -38,8 +38,8 @@ DEMO_RETENTION = {
 
 def create_admin(username: str, display_name: str) -> int:
     username = username.strip()
-    if not (1 <= len(username) <= 50) or not (1 <= len(display_name.strip()) <= 50):
-        print("아이디와 이름은 1~50자여야 합니다.", file=sys.stderr)
+    if not (1 <= len(username) <= 100) or not (1 <= len(display_name.strip()) <= 100):
+        print("아이디와 이름은 1~100자여야 합니다.", file=sys.stderr)
         return 2
     password = temporary_password()
     with session_scope() as db:
