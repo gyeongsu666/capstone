@@ -33,7 +33,7 @@ def test_initial_migration_matches_models():
 def test_initial_sql_has_no_doubled_percent_and_seeds_settings():
     sql = (ROOT / "alembic/versions/0001_initial.sql").read_text(encoding="utf-8")
     assert "%%" not in sql
-    assert "INSERT INTO system_settings (id) VALUES (1);" in sql
+    assert "INSERT INTO system_settings (id, walking_speed_presets, area_level_ratios) VALUES (1," in sql
     assert "INSERT INTO retention_policy (id) VALUES (1);" in sql
     # 순환 외래 키는 테이블 생성 뒤에 붙는다
     for fk in ("nodes_case_id_fkey", "videos_case_id_fkey", "search_runs_anchor_decision_fkey"):

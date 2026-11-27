@@ -529,7 +529,10 @@ ALTER TABLE videos ADD CONSTRAINT videos_case_id_fkey FOREIGN KEY(case_id) REFER
 ALTER TABLE search_runs ADD CONSTRAINT search_runs_anchor_decision_fkey FOREIGN KEY(anchor_decision_id) REFERENCES decisions (id);
 
 
--- 설정 두 테이블은 한 줄짜리. 값은 미정(null)으로 시작하고 관리자가 정한다.
-INSERT INTO system_settings (id) VALUES (1);
+-- 설정 두 테이블은 한 줄짜리. 숫자 기준값은 미정(null)으로 시작하고 관리자가 정한다.
+-- 보행 속도 4개·범위 비율 3개는 응답 모양상 항상 있어야 해서 Front 시나리오의 임시값을 넣는다(팀 확정값 아님).
+INSERT INTO system_settings (id, walking_speed_presets, area_level_ratios) VALUES (1,
+  '[{"person_type":"adult","speed_mps":1.2,"max_speed_mps":1.8},{"person_type":"child","speed_mps":1.0,"max_speed_mps":1.6},{"person_type":"elderly","speed_mps":0.8,"max_speed_mps":1.2},{"person_type":"other","speed_mps":1.0,"max_speed_mps":1.6}]',
+  '[0.5,0.8,1]');
 INSERT INTO retention_policy (id) VALUES (1);
 

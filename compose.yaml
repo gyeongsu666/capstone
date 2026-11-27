@@ -55,8 +55,6 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-      args:
-        EXTRA_REQUIREMENTS: ""
     environment: *backend-env
     volumes: *backend-volumes
     ports:
@@ -70,14 +68,15 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
     restart: unless-stopped
 
-  # 사진 질의 특징 추출(OpenVINO CPU), 후보 검색, 도보 경로, 영상 변환
+  # 사진 질의 특징 추출(YOLO 검출 + OpenVINO Re-ID, CPU), 후보 검색, 도보 경로
+  # GPU 워커와 같은 이미지(사진 속 사람 검출에 YOLO가 필요). GPU는 붙이지 않는다
   worker-cpu:
     build:
       context: .
-      dockerfile: backend/Dockerfile
-      args:
-        EXTRA_REQUIREMENTS: backend/requirements-cpu-worker.txt
-    environment: *backend-env
+      dockerfile: backend/Dockerfile.gpu
+    environment:
+      <<: *backend-env
+      CUDA_VISIBLE_DEVICES: ""
     volumes:
       - ${MEDIA_ROOT_HOST:-./data/media}:/data/media
       - ./모델벤치:/app/모델벤치

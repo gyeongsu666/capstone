@@ -9,7 +9,7 @@ FastAPI + PostgreSQL(PostGIS, pgvector) + Redis + Celery. API 계약은 docs 브
 | db | PostgreSQL 18 + PostGIS 3.6 + pgvector | `infra/db/Dockerfile` |
 | redis | Celery 작업 대기열, 작업 진행 임시 저장 | redis:7.4-alpine |
 | api | REST API(`/api/...`), 문서 `/api/docs` | `backend/Dockerfile` |
-| worker-cpu | default 대기열: 사진 질의 특징 추출(OpenVINO), 후보 검색, 도보 경로, 영상 변환 | `backend/Dockerfile` + `requirements-cpu-worker.txt` |
+| worker-cpu | default 대기열: 사진 질의(YOLO로 사람 찾기 + Intel Re-ID, CPU), 후보 검색, 도보 경로 | `backend/Dockerfile.gpu`(GPU 없이 실행) |
 | worker-gpu | analysis 대기열: 영상 사전 분석(YOLO26n + ByteTrack + Intel Re-ID) | `backend/Dockerfile.gpu`(requirements-model.lock) |
 
 - DB와 Redis는 서버 안(127.0.0.1)에서만 열린다. API도 기본은 127.0.0.1이고, 밖에 열 때 `.env`의 `API_BIND`를 바꾼다.
@@ -67,7 +67,32 @@ scripts/left.sh check                # /api/health + CPU·GPU 워커 왕복
 | 로그인 제한 | `app/common.py` | 같은 IP·아이디 15분 10회 실패 → 429 `RATE_LIMITED` + `Retry-After` |
 | 응답 모양 | `app/schemas_gen.py` | `openapi/openapi.json`(docs 브랜치 복사본)에서 생성. `tools/gen_schemas.sh`로 다시 만든다 |
 
-구현한 API: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`, `POST /api/auth/password`, `GET /api/tasks/{task_id}`.
+## 구현한 API (55/70, 4단계까지)
+
+| 묶음 | API | 파일 |
+|---|---|---|
+| 공통 | 로그인·로그아웃·내 정보·비밀번호 변경, 작업 상태 | `routers/auth.py`, `routers/tasks.py` |
+| 계정 | 목록·생성(임시 비밀번호)·역할 변경·비활성화·비밀번호 초기화, 담당자 검색, 이용 기록 | `routers/users.py` |
+| 지도 관리 | 카메라·보조지점 CRUD, 도보 구간 목록·보정·다시 계산 접수, 위험 지역 CRUD, `/map` | `routers/map_admin.py` |
+| 설정 | 시스템 설정 조회(사용자 포함)·수정, 보관 기간, 삭제 예정 목록(실제 삭제 없음) | `routers/settings.py` |
+| 사건 | 목록·등록·상세·수정·종료, 공동 담당 추가·제거, 검색 조건, 미처리 알림 집계(R2) | `routers/cases.py`, `case_view.py` |
+| 대상 지정 | 기준 사진 업로드(→ CPU 워커 특징 추출)·화면용 사진, 트랙렛 선택(벡터 복사) | `routers/query.py`, `query_worker.py` |
+| 영상 | 녹화 영상 업로드·목록·집계(R7)·상세·재처리, 사건 영상 업로드·목록, 트랙렛 목록·장면, 썸네일, 재생(Range) | `routers/videos.py`, `video_view.py` |
+
+남은 15개는 5단계(알고리즘)에서 만든다: 후보 검색·후보 목록, 판단·번복·결정 기록, 동선·장면, 현재 위치 범위, 감시·출현 알림.
+
+## 영상 분석 흐름(GPU 워커)
+
+`refind.video.analyze.v1(task_id, video_id)` → `app/analysis.py`
+
+1. converting: ffmpeg로 브라우저용 H.264 재생본(`videos/<id>/playback.mp4`, 원본과 시간 대응)
+2. analyzing: YOLO26n + ByteTrack 전체 프레임 추적, ID별 초마다 품질 최고 썸네일, 저장한 JPEG를 Intel Re-ID로 인코딩(모델 브랜치와 같은 방식). 2초마다 진행률(`floor(99×처리/전체)`)을 DB에 쓴다
+3. saving: 트랙렛(궤적 `[offset_s, x, y, w, h]`, 화면 가장자리 → `edge_node_map`으로 진입·이탈 노드)과 평균 벡터 저장 → done 100
+4. 재처리로 작업이 바뀌면 옛 작업의 쓰기는 무시한다(`video.task_id` 비교)
+
+사진 질의(`left.query.embed`, CPU 워커): 사람 영역(bbox)을 주면 그 부분, 아니면 YOLO 검출이 정확히 한 명이어야 한다(0명 `NO_PERSON_DETECTED`, 여러 명 `MULTIPLE_PERSONS`). Front는 bbox를 보내지 않으므로 사진은 한 사람만 나온 것을 쓴다.
+
+설정 초기값: 보행 속도 4개·범위 비율 3개는 응답 모양상 항상 있어야 해서 Front 시나리오 임시값으로 시작하고, 유사도 기준 등 숫자는 null이다(`seed-demo-settings`로 시연값).
 
 ## 개발(로컬)
 

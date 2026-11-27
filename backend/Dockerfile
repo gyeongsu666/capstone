@@ -1,7 +1,6 @@
-# api / worker-cpu 공용 이미지. worker-cpu는 EXTRA_REQUIREMENTS로 OpenVINO 등을 더 설치한다.
+# api 이미지. 워커(CPU·GPU)는 Dockerfile.gpu를 쓴다.
 FROM python:3.12-slim-bookworm
 
-ARG EXTRA_REQUIREMENTS=""
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -12,9 +11,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY backend/requirements.txt backend/requirements-cpu-worker.txt /tmp/req/
-RUN pip install -r /tmp/req/requirements.txt \
-    && if [ -n "$EXTRA_REQUIREMENTS" ]; then pip install -r /tmp/req/$(basename "$EXTRA_REQUIREMENTS"); fi
+COPY backend/requirements.txt /tmp/req/
+RUN pip install -r /tmp/req/requirements.txt
 
 COPY backend /app/backend
 COPY scripts/model_db.py scripts/tracklet_pipeline.py /app/scripts/

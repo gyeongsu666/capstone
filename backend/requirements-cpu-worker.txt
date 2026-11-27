@@ -1,6 +1,0 @@
-# CPU 워커: 사진 질의 Re-ID 특징 추출(OpenVINO), 영상 변환 보조
-# 버전은 모델 서버 잠금 파일(requirements-model.lock)과 맞춘다.
-numpy==2.5.5
-opencv-python-headless==5.0.0.93
-openvino==2026.4.1
-pillow==13.0.0

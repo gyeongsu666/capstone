@@ -67,7 +67,7 @@ def seed_demo_settings() -> int:
         if current is None:
             print("system_settings가 없습니다. 먼저 migrate를 실행하세요.", file=sys.stderr)
             return 1
-        if current.walking_speed_presets or current.default_similarity_threshold is not None:
+        if current.default_similarity_threshold is not None or current.alert_high_threshold is not None:
             print("이미 설정값이 있어 바꾸지 않았습니다(관리자 화면에서 수정).")
             return 0
         db.execute(update(SystemSettings).where(SystemSettings.id == 1).values(**DEMO_SETTINGS))

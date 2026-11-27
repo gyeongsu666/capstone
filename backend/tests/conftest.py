@@ -41,6 +41,7 @@ os.environ["DATABASE_URL"] = DB_URL or "postgresql+psycopg://none:none@127.0.0.1
 os.environ["REDIS_URL"] = "redis://127.0.0.1:1/0"
 os.environ["SESSION_SECRET"] = "test-secret-" + "x" * 32
 os.environ["ALLOWED_ORIGINS"] = "http://localhost:5173"
+os.environ["MEDIA_ROOT"] = tempfile.mkdtemp(prefix="left-media-")
 
 
 def schema_sql_for_test() -> str:
@@ -56,6 +57,20 @@ def schema_sql_for_test() -> str:
 CREATE FUNCTION ST_GeogFromText(text) RETURNS bytea LANGUAGE sql IMMUTABLE AS $$ SELECT convert_to($1, 'UTF8') $$;
 CREATE FUNCTION ST_AsBinary(bytea) RETURNS bytea LANGUAGE sql IMMUTABLE AS $$ SELECT $1 $$;
 CREATE FUNCTION ST_AsEWKB(bytea) RETURNS bytea LANGUAGE sql IMMUTABLE AS $$ SELECT $1 $$;
+-- 보관한 EWKT 문자열을 GeoJSON으로 바꾼다(Point·LineString·Polygon·MultiPolygon)
+CREATE FUNCTION ST_AsGeoJSON(g bytea, digits int DEFAULT 9) RETURNS text LANGUAGE plpgsql IMMUTABLE AS $f$
+DECLARE t text; typ text; body text; name text;
+BEGIN
+  t := regexp_replace(convert_from(g, 'UTF8'), '^SRID=\\d+;', '');
+  typ := upper(trim(split_part(t, '(', 1)));
+  body := substr(t, position('(' in t));
+  body := regexp_replace(body, '(-?[0-9.]+(?:[eE][-+]?[0-9]+)?)\\s+(-?[0-9.]+(?:[eE][-+]?[0-9]+)?)', '[\\1,\\2]', 'g');
+  body := regexp_replace(replace(replace(body, '(', '['), ')', ']'), '\\s+', '', 'g');
+  IF typ = 'POINT' THEN body := substr(body, 2, length(body) - 2); END IF;
+  name := CASE typ WHEN 'POINT' THEN 'Point' WHEN 'LINESTRING' THEN 'LineString'
+                   WHEN 'POLYGON' THEN 'Polygon' WHEN 'MULTIPOLYGON' THEN 'MultiPolygon' END;
+  RETURN '{"type":"' || name || '","coordinates":' || body || '}';
+END $f$;
 """
     return stubs + sql
 
@@ -128,7 +143,8 @@ def db_clean(schema):
 
     with psycopg.connect(schema, autocommit=True) as conn:
         conn.execute(f"TRUNCATE {', '.join(TABLES)} RESTART IDENTITY CASCADE;")
-        conn.execute("DELETE FROM system_settings; INSERT INTO system_settings (id) VALUES (1);")
+        conn.execute("DELETE FROM system_settings;")
+        conn.execute(re.search(r"INSERT INTO system_settings .*?;", SCHEMA_SQL.read_text(encoding="utf-8"), re.S).group(0))
         conn.execute("DELETE FROM retention_policy; INSERT INTO retention_policy (id) VALUES (1);")
     yield
 
@@ -179,3 +195,69 @@ def login(client, username, password):
     res = client.post("/api/auth/login", json={"username": username, "password": password}, headers=ORIGIN)
     assert res.status_code == 200, res.text
     return res.json()["csrf_token"]
+
+
+@pytest.fixture
+def sent_tasks(monkeypatch):
+    """Celery로 보낸 작업을 기록만 한다(테스트에는 Redis가 없다)."""
+    from app.worker import celery_app
+
+    sent = []
+    monkeypatch.setattr(celery_app, "send_task", lambda name, kwargs=None, queue=None, task_id=None, **_: sent.append(
+        {"name": name, "kwargs": kwargs, "queue": queue, "task_id": task_id}))
+    return sent
+
+
+class Api:
+    """로그인한 클라이언트. 변경 요청에 CSRF·Origin·Idempotency-Key를 붙인다."""
+
+    def __init__(self, client, csrf):
+        self.c, self.csrf = client, csrf
+
+    def _h(self, extra=None, idem=None):
+        import uuid
+
+        h = {**ORIGIN, "X-CSRF-Token": self.csrf, "Idempotency-Key": idem or str(uuid.uuid4())}
+        return {**h, **(extra or {})}
+
+    def get(self, url, **kw):
+        return self.c.get(url, **kw)
+
+    def post(self, url, json=None, idem=None, **kw):
+        return self.c.post(url, json=json, headers=self._h(kw.pop("headers", None), idem), **kw)
+
+    def patch(self, url, json=None, **kw):
+        return self.c.patch(url, json=json, headers=self._h(), **kw)
+
+    def put(self, url, json=None, **kw):
+        return self.c.put(url, json=json, headers=self._h(), **kw)
+
+    def delete(self, url, **kw):
+        return self.c.delete(url, headers=self._h(), **kw)
+
+
+@pytest.fixture
+def as_user(client, make_user, sent_tasks):
+    """as_user('admin', role='admin') → Api. 같은 TestClient 쿠키를 바꿔 끼운다."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    def _login(username="user1", role="user"):
+        make_user(username, "test-password-1", role=role)
+        c = TestClient(app)
+        return Api(c, login(c, username, "test-password-1"))
+
+    return _login
+
+
+DEMO_SETTINGS_SQL = """UPDATE system_settings SET walking_speed_presets='[{"person_type":"adult","speed_mps":1.2,"max_speed_mps":1.8},{"person_type":"child","speed_mps":1.0,"max_speed_mps":1.6},{"person_type":"elderly","speed_mps":0.8,"max_speed_mps":1.2},{"person_type":"other","speed_mps":1.0,"max_speed_mps":1.6}]',
+ default_similarity_threshold=0.6, alert_high_threshold=0.8, area_level_ratios='[0.5,0.8,1]', area_buffer_m=30, max_upload_bytes=2000000000"""
+
+
+@pytest.fixture
+def demo_settings(schema, db_clean):
+    import psycopg
+
+    with psycopg.connect(schema, autocommit=True) as conn:
+        conn.execute(DEMO_SETTINGS_SQL)
