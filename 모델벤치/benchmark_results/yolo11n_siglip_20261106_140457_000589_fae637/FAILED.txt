@@ -1,0 +1,22 @@
+Traceback (most recent call last):
+  File "D:\LEFT\search_benchmark.py", line 268, in run
+    SiglipEncoder(feature_device, torch, cv2, np)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\LEFT\search_benchmark.py", line 101, in __init__
+    self.model = SiglipVisionModel.from_pretrained(SIGLIP_ID)
+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "D:\LEFT\.venv\Lib\site-packages\transformers\modeling_utils.py", line 4270, in from_pretrained
+    config, dtype = _get_dtype(
+                    ~~~~~~~~~~^
+        dtype, checkpoint_files, config, sharded_metadata, state_dict, weights_only, hf_quantizer
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "D:\LEFT\.venv\Lib\site-packages\transformers\modeling_utils.py", line 841, in _get_dtype
+    state_dict = load_state_dict(
+        checkpoint_files[0], map_location="meta", weights_only=weights_only
+    )
+  File "D:\LEFT\.venv\Lib\site-packages\transformers\modeling_utils.py", line 341, in load_state_dict
+    with safe_open(checkpoint_path, framework="pt") as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: 이 작업을 완료하기 위한 페이징 파일이 너무 작습니다. (os error 1455)

@@ -1,0 +1,23 @@
+name: capstone
+services:
+  db:
+    build: ./infra/db
+    environment:
+      POSTGRES_DB: capstone
+      POSTGRES_USER: capstone
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run python scripts/init_db_env.py first}
+      TZ: Asia/Seoul
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U capstone -d capstone"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    shm_size: 256mb
+volumes:
+  postgres_data:
