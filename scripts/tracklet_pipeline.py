@@ -69,7 +69,20 @@ def analyze(args):
             if c['quality']>t.get('best_quality',-1):
                 t['best_quality']=c['quality']; t['thumbnail_path']=str(path)
 
+    tracking_video = getattr(args, 'tracking_video', None)
+    writer = None
+    partial = None
     try:
+        if tracking_video is not None:
+            if tracking_video.suffix.lower() != '.mp4' or tracking_video.exists():
+                raise ValueError('Tracking output must be a new MP4 file')
+            partial = tracking_video.with_name(f'.{uuid4().hex}.partial.mp4')
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            writer = cv2.VideoWriter(str(partial), cv2.VideoWriter_fourcc(*'mp4v'),
+                                     fps, (width, height))
+            if not writer.isOpened():
+                raise ValueError(f'Cannot open tracking output: {tracking_video}')
         while True:
             ok,frame=cap.read()
             if not ok: break
@@ -94,6 +107,8 @@ def analyze(args):
                     if quality>t.get('candidate',{}).get('quality',-1):
                         t['candidate']=dict(crop=crop.copy(),quality=quality,second=second,
                             time=seconds,frame=count+1,box=[x1,y1,x2,y2],confidence=float(confidence))
+            if writer is not None:
+                writer.write(result.plot(labels=True, conf=False) if boxes is not None and boxes.id is not None else frame)
             count+=1
             if count==1 or count%max(1,round(fps*5))==0:
                 print(f'Tracking {count}/{expected} frames; IDs={len(tracks)}; thumbnails={len(samples)}',flush=True)
@@ -119,6 +134,17 @@ def analyze(args):
             aggregation='mean of L2-normalized sample vectors, then L2 normalization',
             demo_metadata=args.demo,tracks=[tracks[no] for no in numbers])
         (output/'tracks.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
+        if writer is not None:
+            writer.release()
+            writer = None
+            probe = cv2.VideoCapture(str(partial))
+            try:
+                readable, _ = probe.read()
+                if not readable or round(probe.get(cv2.CAP_PROP_FRAME_COUNT)) != count:
+                    raise ValueError('Tracking MP4 frame count does not match analysis')
+            finally:
+                probe.release()
+            partial.rename(tracking_video)
         print(f'Analysis complete: {output}; tracks={len(numbers)}, thumbnails={len(samples)}')
         return output
     except BaseException:
@@ -126,6 +152,10 @@ def analyze(args):
         raise
     finally:
         cap.release()
+        if writer is not None:
+            writer.release()
+        if partial is not None:
+            partial.unlink(missing_ok=True)
 
 
 def load_bundle(folder):
@@ -178,7 +208,7 @@ def ingest(args):
             if old[1]!='done': raise ValueError('Existing video is not complete')
             print(f'Already stored: video_id={old[0]}'); return old[0]
         camera=args.camera_id
-        if camera is None:
+        if camera is None and not getattr(args, 'unmapped_camera', False):
             if not m['demo_metadata']: raise ValueError('--camera-id is required for real data')
             camera=conn.execute("""INSERT INTO nodes(kind,name,location)
                 VALUES ('camera','DEMO video_1 — synthetic location',ST_GeogFromText('POINT(127 37)')) RETURNING id""").fetchone()[0]
@@ -285,7 +315,12 @@ def main():
     a.add_argument('--recorded-start',required=True); a.add_argument('--demo',action='store_true')
     a.add_argument('--device',default='auto'); a.add_argument('--imgsz',type=int,default=1280)
     a.add_argument('--output-root',type=Path,default=ROOT/'runs/tracklets')
-    i=sub.add_parser('ingest'); i.add_argument('folder',type=Path); i.add_argument('--camera-id',type=int)
+    a.add_argument('--tracking-video', type=Path, help='Save an MP4 with boxes and IDs from this analysis')
+    i=sub.add_parser('ingest'); i.add_argument('folder',type=Path)
+    camera = i.add_mutually_exclusive_group()
+    camera.add_argument('--camera-id',type=int)
+    camera.add_argument('--unmapped-camera', action='store_true',
+                        help='Store without a camera ID in a database that supports unmapped videos')
     q=sub.add_parser('query'); q.add_argument('--image',type=Path,required=True)
     q.add_argument('--video-id',type=int,required=True); q.add_argument('--detect-person',action='store_true')
     q.add_argument('--person-index',type=int); q.add_argument('--output-root',type=Path,default=ROOT/'runs/search')
