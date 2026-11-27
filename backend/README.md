@@ -122,5 +122,17 @@ py -3.11 -m venv .venv311 && .venv311/Scripts/python -m pip install -r backend/r
 cd backend && ../.venv311/Scripts/python -m pytest
 ```
 
-- pgserver에는 PostGIS가 없어서 테스트 DB는 geography 칸을 bytea로 바꿔 만든다(`tests/conftest.py`). 좌표 계산 테스트는 서버 DB로 돌린다: `TEST_DATABASE_URL=postgresql+psycopg://... pytest`
+### 로컬에서 Front를 실제 서버 모드로 붙여 보기
+
+```bash
+cd backend && ../.venv311/Scripts/python tools/dev_local.py --reset   # http://127.0.0.1:8000/api/docs
+# Front 폴더: .env.realapi.local에 VITE_USE_MOCK=false, API_PROXY_TARGET=http://127.0.0.1:8000
+npx vite --mode realapi                                              # http://localhost:5173
+```
+
+- 내장 PostgreSQL + fakeredis로 API만 띄운다(워커 없음 → 영상 분석·사진 질의·감시는 접수까지만). 도보 경로는 직선 추정.
+- 시연 데이터는 Front 가짜 서버와 같은 도림캠퍼스 카메라 12대·도보 구간 20개·저수지, 계정 admin/user1/user2(비밀번호 test1234, user2는 첫 로그인 변경), 분석이 끝난 것처럼 만든 영상·트랙렛, 사건 하나.
+- 로컬 전용 값이다. 서버 배포에는 `scripts/left.sh`를 쓴다.
+
+- pgserver에는 PostGIS가 없어서 테스트 DB는 geography 칸을 bytea로 바꿔 만든다(`tools/pg_stub.py`). 좌표 계산 테스트는 서버 DB로 돌린다: `TEST_DATABASE_URL=postgresql+psycopg://... pytest`
 - pgserver가 없으면 DB 테스트(`@pytest.mark.db`)는 건너뛴다.

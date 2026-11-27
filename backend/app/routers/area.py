@@ -12,7 +12,7 @@ from app.auth import AuthContext, load_case, require_user, utcnow
 from app.db import get_db
 from app.errors import ApiError
 from app.geo import as_geojson, haversine_m, lon_lat, parse_geojson
-from app.models import Case, Decision, HazardZone, Node, SystemSettings, Tracklet, Video
+from app.models import Case, Decision, HazardZone, Node, SystemSettings, Tracklet, TrackletEmbedding, Video
 from app.serializers import dump
 from app.walkgraph import dijkstra, load_graph
 
@@ -47,10 +47,16 @@ def silent_cameras(db: Session, case: Case, graph, dist: dict[int, float], basis
             (Video.case_id.is_(None)) | (Video.case_id == case.id)))
         if not covered:
             continue
-        seen = db.scalar(select(exists().where(and_(
-            Decision.case_id == case.id, Decision.camera_id == cam_id, Decision.status == "active",
-            Decision.verdict == "confirmed", Decision.observed_at > basis_time))))
-        if not seen:
+        # 확정만 보면 '아직 확인 안 한 비슷한 사람'이 있는 카메라까지 부재로 친다 →
+        # 도착 가능 시각 이후 기준 유사도 이상인 트랙렛이 하나도 없을 때만 부재로 본다('아니오'로 뺀 것은 제외)
+        rejected = exists().where(Decision.case_id == case.id, Decision.tracklet_id == Tracklet.id,
+                                  Decision.status == "active", Decision.verdict == "rejected")
+        similar = db.scalar(select(exists().where(and_(
+            Tracklet.camera_id == cam_id, Tracklet.start_at >= arrive, Tracklet.start_at <= as_of, ~rejected,
+            exists().where(TrackletEmbedding.tracklet_id == Tracklet.id, TrackletEmbedding.model_name == case.query_model_name,
+                           (1 - TrackletEmbedding.embedding.cosine_distance(case.query_embedding)) >= case.similarity_threshold),
+        )))) if case.query_embedding is not None else True
+        if not similar:
             out.add(cam_id)
     return out
 

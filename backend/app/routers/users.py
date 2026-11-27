@@ -168,7 +168,8 @@ def reset_password(user_id: int, body: S.PasswordResetRequest, request: Request,
 
 @router.get("/api/users/directory", response_model=S.UserDirectoryPage, tags=["보조 조회"], summary="공동 담당 추가용 계정 검색")
 def user_directory(
-    query: str = Query(..., max_length=100),
+    # 명세는 필수지만 Front가 담당자 선택 목록을 query 없이 부른다 → 비우면 활성 계정 전체(Front 구현 기준)
+    query: str = Query("", max_length=100),
     cursor: str | None = CursorParam,
     limit: int = LimitParam,
     _: AuthContext = Depends(require_user),

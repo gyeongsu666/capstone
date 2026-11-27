@@ -45,34 +45,13 @@ os.environ["MEDIA_ROOT"] = tempfile.mkdtemp(prefix="left-media-")
 
 
 def schema_sql_for_test() -> str:
+    import sys
+
+    sys.path.insert(0, str(ROOT / "tools"))
+    from pg_stub import without_postgis
+
     sql = SCHEMA_SQL.read_text(encoding="utf-8")
-    if HAS_POSTGIS:
-        return sql
-    sql = sql.replace("CREATE EXTENSION IF NOT EXISTS postgis;", "")
-    sql = re.sub(r"geography\([A-Z]+,4326\)", "bytea", sql)
-    # bytea에는 gist 인덱스를 만들 수 없다
-    sql = re.sub(r"CREATE INDEX \w+ ON \w+ USING gist \(\w+\);", "", sql)
-    # GeoAlchemy가 쓰는 변환 함수의 흉내(값을 그대로 보관만 한다)
-    stubs = """
-CREATE FUNCTION ST_GeogFromText(text) RETURNS bytea LANGUAGE sql IMMUTABLE AS $$ SELECT convert_to($1, 'UTF8') $$;
-CREATE FUNCTION ST_AsBinary(bytea) RETURNS bytea LANGUAGE sql IMMUTABLE AS $$ SELECT $1 $$;
-CREATE FUNCTION ST_AsEWKB(bytea) RETURNS bytea LANGUAGE sql IMMUTABLE AS $$ SELECT $1 $$;
--- 보관한 EWKT 문자열을 GeoJSON으로 바꾼다(Point·LineString·Polygon·MultiPolygon)
-CREATE FUNCTION ST_AsGeoJSON(g bytea, digits int DEFAULT 9) RETURNS text LANGUAGE plpgsql IMMUTABLE AS $f$
-DECLARE t text; typ text; body text; name text;
-BEGIN
-  t := regexp_replace(convert_from(g, 'UTF8'), '^SRID=\\d+;', '');
-  typ := upper(trim(split_part(t, '(', 1)));
-  body := substr(t, position('(' in t));
-  body := regexp_replace(body, '(-?[0-9.]+(?:[eE][-+]?[0-9]+)?)\\s+(-?[0-9.]+(?:[eE][-+]?[0-9]+)?)', '[\\1,\\2]', 'g');
-  body := regexp_replace(replace(replace(body, '(', '['), ')', ']'), '\\s+', '', 'g');
-  IF typ = 'POINT' THEN body := substr(body, 2, length(body) - 2); END IF;
-  name := CASE typ WHEN 'POINT' THEN 'Point' WHEN 'LINESTRING' THEN 'LineString'
-                   WHEN 'POLYGON' THEN 'Polygon' WHEN 'MULTIPOLYGON' THEN 'MultiPolygon' END;
-  RETURN '{"type":"' || name || '","coordinates":' || body || '}';
-END $f$;
-"""
-    return stubs + sql
+    return sql if HAS_POSTGIS else without_postgis(sql)
 
 
 def pytest_configure(config):

@@ -227,3 +227,21 @@ def test_watch_and_alert_decision(world):
     off_version = user.get(f"/api/cases/{cid}").json()["version"]
     off = user.put(f"/api/cases/{cid}/watch", {"enabled": False, "expected_case_version": off_version})
     assert off.json()["status"] == "stopped"
+
+
+def test_decision_audit_has_id_and_absence_ignores_unconfirmed_lookalikes(world):
+    """6단계에서 고친 것: 판단 이용 기록에 판단 번호, 비슷한 사람이 찍힌 카메라는 '나타나지 않음'으로 치지 않음."""
+    from sqlalchemy import select
+
+    from app.db import session_scope
+    from app.models import AuditLog
+
+    admin, user, cid, ids, (c1, wp, c2) = world
+    run = search(user, cid)
+    d = decide(user, cid, run["search_id"], ids["anchor"], "confirmed").json()
+    with session_scope() as db:
+        rid = db.scalar(select(AuditLog.resource_id).where(AuditLog.action == "DECISION"))
+    assert rid == d["decision_id"]
+    area = user.get(f"/api/cases/{cid}/search-area", params={"as_of": (T0 + timedelta(minutes=15)).isoformat()}).json()
+    # C2에는 기준 이상 비슷한 사람(good·mid)이 찍혀 있으므로 부재 경고가 없어야 한다
+    assert all(w["code"] != "ABSENCE_APPLIED" for w in area["warnings"])

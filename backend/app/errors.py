@@ -1,4 +1,5 @@
 """공통 에러 응답: { request_id, error: { code, message, fields, context, retryable } } (openapi ErrorResponse)."""
+import logging
 from typing import Any
 from uuid import uuid4
 
@@ -104,4 +105,7 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def handle_unexpected(request: Request, err: Exception):
+        # 응답에는 내부 내용을 숨기고, 서버 로그에는 request_id와 함께 전체 스택을 남긴다
+        logging.getLogger("left.api").exception("unhandled error request_id=%s %s %s", request_id_of(request),
+                                                request.method, request.url.path)
         return error_response(request, ApiError(500, "INTERNAL_ERROR", "서버 오류가 발생했어요.", retryable=True))

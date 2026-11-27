@@ -196,3 +196,11 @@ def test_walk_edge_manual_patch(as_user):
     assert admin.get("/api/walk-graph", params={"suspected_detour": True}).json()["items"][0]["edge_id"] == eid
     rec = admin.post("/api/walk-graph/recalculations", {"include_manual": False, "reason": "점검"})
     assert rec.status_code == 202 and rec.json()["status"] == "queued"
+
+
+def test_directory_without_query_lists_active_users(as_user):
+    """Front는 담당자 선택 목록을 query 없이 부른다(6단계 실제 연결에서 찾은 차이)."""
+    user = as_user("user1")
+    as_user("user2")
+    res = user.get("/api/users/directory", params={"limit": 100})
+    assert res.status_code == 200 and {i["username"] for i in res.json()["items"]} == {"user1", "user2"}
