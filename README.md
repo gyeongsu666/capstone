@@ -1,70 +1,86 @@
-# ReFind
+# LEFT
 
-> CCTV 영상 기반 실종자 재식별(Re-ID) 및 동선 추적 시스템 — 캡스톤 디자인 프로젝트
+CCTV 영상에서 실종자 후보를 찾고, 담당자의 확인을 바탕으로 이동 경로와 수색 범위를 정리하는 캡스톤 디자인 프로젝트입니다.
 
-실종 신고가 들어오면 등록된 CCTV 영상에서 실종자를 찾아 **과거 이동 경로를 복원**하고, 마지막 목격 지점과 경과 시간을 바탕으로 **현재 있을 만한 수색 우선 구역**을 제시합니다.
-카메라 간 도보 경로로 검색 범위를 좁혀, 모든 영상을 뒤지지 않고 **실종 시각 이후 도달 가능한 카메라·시간대만** 검색하는 것이 핵심입니다.
+## 서비스 흐름
 
-## 주요 특징
+| 단계 | 담당자와 입력 | 처리와 결과 |
+| --- | --- | --- |
+| 1. 수색 환경 준비 | 관리자가 카메라 위치, 도보 경로, 위험 지역, 녹화 영상을 등록 | 영상에서 사람을 검출·추적하고 인물 특징을 저장 |
+| 2. 사건과 대상 등록 | 수색 담당자가 사건과 사진 또는 영상 속 인물을 등록 | 검색 기준 인물과 마지막 목격 정보를 설정 |
+| 3. 후보 검색과 확인 | 시스템이 이동 가능한 카메라·시간대의 후보를 찾고 담당자가 예·아니오·보류로 판단 | 확인 기록을 남기고 확정된 장면을 기준으로 후속 검색 |
+| 4. 동선과 수색 범위 확인 | 담당자가 확정 장면을 검토 | 타임라인, 지도 경로, 현재 위치 범위와 위험 지역 겹침을 확인 |
+| 5. 출현 감시 | 담당자가 감시를 시작하고 알림을 확인 | 새 출현 후보를 확인한 결과를 동선에 반영 |
 
-- **사전 분석 방식** — 영상을 등록할 때 등장하는 모든 사람을 미리 분석해 DB에 저장하고, 검색은 DB 조회로 처리해 첫 검색이 빠릅니다.
-- **시공간 제약 검색** — 카메라 쌍마다 도보 경로·이동 시간을 계산한 카메라 그래프로 검색 범위를 줄인 뒤, 그 안에서만 유사도 검색을 합니다.
-- **사람 확인 루프** — 유사도 기준 이상의 후보를 모두 보여 주고, 담당자가 확정한 결과로 앞뒤 구간을 다시 검색합니다.
-- **현재 위치 추정** — 도보 길 위에 이동 가능 범위를 표시하고, 찍혔어야 할 카메라에 나타나지 않은 방향은 가능성을 낮춥니다. 위험지역(연못·공사장·큰 도로·산)과 겹치면 경고합니다.
-- **실시간 감시** — 확정된 실종자 특징을 감시 대상으로 등록해, 새로 들어오는 영상에서 출현 시 알림을 보냅니다.
+시공간 조건으로 검색 대상을 좁히고, 유사도 결과를 사람이 확인하는 흐름을 중심으로 설계했습니다. 상세 권한, 예외, 상태 변화는 [기능 요구사항](https://github.com/gyeongsu666/capstone/blob/docs/docs/requirements.md)과 [API 명세](https://github.com/gyeongsu666/capstone/blob/docs/docs/api/README.md)를 참고하세요.
 
-## 사용 시나리오
+## 저장소 구성과 현재 상태
 
-| 구분 | 시나리오 | 행위자 | 수행 시점 | 결과 |
-| --- | --- | --- | --- | --- |
-| S1 | 사전 준비 | 관리자 | 평소 1회 | 검색 가능한 영상 DB |
-| S2 | 과거 동선 추적 | 수색 담당자 | 실종 신고 접수 후 | 타임라인 · 지도 이동 경로 |
-| S3 | 현재 위치 수색 | 수색 담당자 | S2 확정 후, 발견 때마다 재계산 | 수색 우선 구역 · 출현 알림 |
+이 저장소는 브랜치별로 작업을 관리합니다. GitHub 기본 브랜치인 `main`에는 프로젝트 소개가 있으며, 실행 코드는 아래 브랜치에 있습니다.
 
-## 시스템 구성
+| 브랜치 | 내용 | 확인할 문서 |
+| --- | --- | --- |
+| [frontend](https://github.com/gyeongsu666/capstone/tree/frontend) | React 화면과 MSW 기반 시연 데이터. 백엔드와의 실제 연결은 아직 완료되지 않음 | [프론트엔드 실행 안내](https://github.com/gyeongsu666/capstone/blob/frontend/README.md) |
+| [backend](https://github.com/gyeongsu666/capstone/tree/backend) | FastAPI, 데이터베이스, 작업 큐, 영상 분석·검색·감시 코드 | [백엔드 실행 안내](https://github.com/gyeongsu666/capstone/blob/backend/backend/README.md), [서버 검증 기록](https://github.com/gyeongsu666/capstone/blob/backend/README_SERVER.md) |
+| [model](https://github.com/gyeongsu666/capstone/tree/model) | 영상 분석과 인물 재식별 벤치마크 | [모델 실행 안내](https://github.com/gyeongsu666/capstone/blob/model/README_MODEL.md) |
+| [docs](https://github.com/gyeongsu666/capstone/tree/docs) | 요구사항, 기술 문서, OpenAPI 명세 | [문서 폴더](https://github.com/gyeongsu666/capstone/tree/docs/docs) |
 
-| 모듈 | 역할 |
+프론트엔드의 지도·경로·현재 위치 범위와 알림은 MSW 시나리오 데이터로 시연할 수 있습니다. 이 화면의 결과를 실제 CCTV 분석 결과나 실시간 현장 검증 결과로 해석하지 않아야 합니다. 백엔드 코드와 프론트엔드 화면의 통합 동작은 별도 확인이 필요합니다.
+
+## 기술 구성
+
+| 영역 | 현재 브랜치에서 확인한 기술 |
 | --- | --- |
-| ① 환경 설정 | 카메라·보조 지점·위험지역 등록, 카메라 그래프와 길 네트워크 생성, 영상 등록 |
-| ② 영상 분석 | 프레임 추출 → 사람 검출 → 카메라 내 추적 → 트랙렛 정리 → Re-ID 특징 추출 (인상착의 인식 선택) |
-| ③ 검색 | 사건 등록, 시공간 제약 필터, 유사도 검색, 경로 일관성 검사, 확인 요청·반영 |
-| ④ 동선 분석 | 타임라인, 지도 경로, 현재 위치 범위, 위험지역 경고, 수색 우선 구역 |
-| ⑤ 실시간 감시 | 실시간(재생) 영상 분석, 감시 대상 매칭, 출현 알림 |
+| 프론트엔드 | React 18, TypeScript, Vite, React Router, Ant Design, TanStack Query, Zustand, MSW |
+| 백엔드와 작업 처리 | FastAPI, Celery, Redis |
+| 영상 분석·재식별 | YOLO26n, ByteTrack, Intel person-reidentification-retail-0287, OpenVINO |
+| 데이터베이스 | PostgreSQL, PostGIS, pgvector |
+| 지도 | 카카오맵 JavaScript SDK |
+| 실행 환경 | Docker Compose, Python 모델 실행 환경 |
 
-③ 검색과 ④ 동선 분석이 핵심 차별 모듈이며, ⑤는 ②의 검출·추적·특징 추출을 그대로 재사용합니다.
+기술 문서의 일부 초기 선정안과 현재 코드가 다릅니다. 예를 들어 [기술 스택 문서](https://github.com/gyeongsu666/capstone/blob/docs/docs/tech-stack.md)는 FAISS를 설명하지만, 현재 `backend` 브랜치는 pgvector 기반 검색을 안내합니다. 도보 경로 제공 방식도 [백엔드 안내](https://github.com/gyeongsu666/capstone/blob/backend/backend/README.md)에 팀 확정이 필요한 항목으로 기록돼 있습니다.
 
-**저장소**
+## 프론트엔드 시연
 
-- **메타 DB** (11개 테이블) — 카메라, 보조 지점, 그래프 구간, 길 네트워크, 위험지역, 영상, 트랙렛 / 사건, 확인 기록, 부재 정보, 알림
-- **벡터 DB** — 트랙렛별 Re-ID 특징 벡터
+Node.js 22.12 이상 또는 20.19 이상과 카카오 JavaScript 키가 필요합니다. 카카오 개발자 설정에서 `http://localhost:5173`을 JavaScript SDK 도메인으로 등록해야 지도가 표시됩니다.
 
-## 기술 스택
+```bash
+git clone -b frontend https://github.com/gyeongsu666/capstone.git
+cd capstone
+npm install
+```
 
-| 구분 | 사용 기술 |
-| --- | --- |
-| 지도 | 카카오맵 SDK |
-| 도보 경로 | 카카오맵 도보 경로 API |
-| 영상 분석 / Re-ID | 미정 |
-| Backend / DB | 미정 (메타 DB + 벡터 DB 구성) |
-| Frontend | 미정 |
+`.env.example`을 복사해 `.env.local`을 만들고 카카오 키와 MSW 사용 설정을 입력합니다. 이 파일은 저장소에 올리지 않습니다.
 
-## 검증 현황
+```dotenv
+VITE_KAKAO_MAP_KEY=카카오_JavaScript_키
+VITE_USE_MOCK=true
+VITE_API_BASE_URL=/api
+```
 
-- 청계캠퍼스 카메라 6대 기준, 15개 카메라 쌍 모두 도보 경로 계산 성공
-- 우회율 1.8 초과 구간 2개(모두 C4 분수대 부근) — 관리자 보정 대상
+```bash
+npm run dev
+```
 
-> 실제 CCTV는 접근이 제한되어 카메라별 녹화 영상을 사용합니다.
+브라우저에서 `http://localhost:5173`을 엽니다. 시연 계정, 화면별 둘러보기, 지도 데이터의 범위는 [프론트엔드 README](https://github.com/gyeongsu666/capstone/blob/frontend/README.md)에 있습니다.
 
-## 문서
+## 백엔드와 모델
 
-- 시스템 설계서 (상위·중간 레벨)
-- 기술 설명서 및 요구사항 명세서
-- 시스템 구성 발표 자료
+백엔드는 PostgreSQL·Redis·API·CPU/GPU 작업자를 포함하는 Docker Compose 구성입니다. 모델 가중치와 영상 등 대용량 파일은 Git LFS를 사용합니다. 서버 준비와 실행 순서는 [백엔드 README](https://github.com/gyeongsu666/capstone/blob/backend/backend/README.md), 영상 분석·DB 검색 방법은 [서버 README](https://github.com/gyeongsu666/capstone/blob/backend/README_SERVER.md), 모델 비교 방법은 [모델 README](https://github.com/gyeongsu666/capstone/blob/model/README_MODEL.md)를 따르세요.
+
+서버 README에는 단일 샘플 영상을 분석해 트랙렛과 특징 벡터를 DB에 저장하고 사진으로 상위 5개 트랙렛을 조회한 검증 결과가 있습니다. 트랙렛 ID는 실제 인원수나 카메라 간 동일인 식별 결과를 뜻하지 않습니다. 정답 데이터에 기반한 검색 정확도와 다중 카메라 처리 성능은 아직 검증 결과로 제시되지 않았습니다.
+
+## 관련 문서
+
+- [기능 요구사항](https://github.com/gyeongsu666/capstone/blob/docs/docs/requirements.md)
+- [OpenAPI 명세](https://github.com/gyeongsu666/capstone/blob/docs/docs/api/openapi.json)
+- [프론트엔드 API 요청서](https://github.com/gyeongsu666/capstone/blob/docs/docs/api/frontend-api-requests.md)
+- [모델·서버 검증 기록](https://github.com/gyeongsu666/capstone/blob/backend/README_SERVER.md)
 
 ## 팀원
 
-| 이름 | 역할 | GitHub |
-| --- | --- | --- |
-| 김경수 | - | [@gyeongsu666](https://github.com/gyeongsu666) |
-| 이현강 | - | - |
-| 전수빈 | - | - |
+| 이름 | GitHub |
+| --- | --- |
+| 김경수 | [@gyeongsu666](https://github.com/gyeongsu666) |
+| 이현강 | - |
+| 전수빈 | - |
